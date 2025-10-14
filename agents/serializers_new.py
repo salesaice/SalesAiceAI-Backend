@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from .models_new import (
     Agent, 
     BusinessKnowledge, 
@@ -132,7 +133,14 @@ class AgentCreateUpdateSerializer(serializers.ModelSerializer):
         return value
     
     def validate_operating_hours(self, value):
-        """Validate operating hours structure"""
+        """Validate and parse operating hours structure"""
+        if isinstance(value, str):
+            try:
+                import json
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                raise serializers.ValidationError("Invalid JSON format for operating hours")
+        
         if value and not isinstance(value, dict):
             raise serializers.ValidationError("Operating hours must be an object")
         
@@ -142,7 +150,14 @@ class AgentCreateUpdateSerializer(serializers.ModelSerializer):
         return value
     
     def validate_campaign_schedule(self, value):
-        """Validate campaign schedule structure"""
+        """Validate and parse campaign schedule structure"""
+        if isinstance(value, str):
+            try:
+                import json
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                raise serializers.ValidationError("Invalid JSON format for campaign schedule")
+        
         if not value:
             return value
             
@@ -159,15 +174,35 @@ class AgentCreateUpdateSerializer(serializers.ModelSerializer):
         
         return value
     
+    def validate_hume_ai_config(self, value):
+        """Validate and parse Hume AI config"""
+        if isinstance(value, str):
+            try:
+                import json
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                raise serializers.ValidationError("Invalid JSON format for Hume AI config")
+        
+        return value or {}
+    
+    def validate_auto_answer_enabled(self, value):
+        """Handle boolean conversion for multipart form data"""
+        if isinstance(value, str):
+            if value.lower() in ['true', '1', 'yes', 'on']:
+                return True
+            elif value.lower() in ['false', '0', 'no', 'off']:
+                return False
+            else:
+                raise serializers.ValidationError("Invalid boolean value")
+        return bool(value)
+    
     def validate(self, attrs):
         """Cross-field validation"""
         agent_type = attrs.get('agent_type')
         
-        # Auto-answer is only for inbound agents
-        if agent_type == 'outbound' and attrs.get('auto_answer_enabled'):
-            raise serializers.ValidationError({
-                'auto_answer_enabled': 'Auto-answer is only available for inbound agents'
-            })
+        # Note: Auto-answer can be used for both inbound and outbound agents
+        # Inbound: Auto-answer incoming calls
+        # Outbound: Auto-answer when customer picks up
         
         # Contacts file is only for outbound agents
         if agent_type == 'inbound' and 'contacts_file' in attrs:

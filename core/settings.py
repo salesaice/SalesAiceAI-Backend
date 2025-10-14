@@ -13,7 +13,7 @@ SECRET_KEY = config('SECRET_KEY', default='wwvnx-f+3g$-)c0kjdpg+ib2^ipojc3%@6k-0
 DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
-    default='localhost,127.0.0.1,testserver,salesaice.pythonanywhere.com'
+    default='localhost,127.0.0.1,testserver,salesaice.pythonanywhere.com,salesaice.ai'
 ).split(',')
 CORS_ALLOW_CREDENTIALS = True
 
@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     
     # Third party apps
+    'channels',
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
@@ -79,6 +80,19 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'core.wsgi.application'
+ASGI_APPLICATION = 'core.asgi.application'
+
+# Channel Layers Configuration
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer'
+        # For production, use Redis:
+        # 'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        # 'CONFIG': {
+        #     "hosts": [config('REDIS_URL', default='redis://localhost:6379')],
+        # },
+    },
+}
 
 # Database
 DATABASES = {
@@ -270,6 +284,7 @@ CELERY_BEAT_SCHEDULE = {
 HUME_AI_API_KEY = config('HUME_AI_API_KEY', default='mb5K22hbrOAvddJfkP4ZlScpMVHItgw0jfyxj0F1byGJ7j1w')
 HUME_AI_BASE_URL = config('HUME_AI_BASE_URL', default='https://api.hume.ai/v0')
 HUME_AI_MODEL = config('HUME_AI_MODEL', default='evi-2')
+HUME_AI_EVI_CONFIG_ID = config('HUME_AI_EVI_CONFIG_ID', default='13624648-658a-49b1-81cb-a0f2e2b05de5')
 
 # Twilio Configuration
 TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
@@ -316,3 +331,6 @@ else:
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
+#     TWILIO_ACCOUNT_SID=your_account_sid_here
+# TWILIO_AUTH_TOKEN=your_auth_token_here
+# TWILIO_PHONE_NUMBER = "+1234567890"

@@ -87,7 +87,7 @@ class AIAgentDashboardAPIView(APIView):
         for call in recent_calls:
             calls_data.append({
                 'id': str(call.id),
-                'phone_number': call.phone_number,
+                'phone_number': call.caller_number,  # Fixed: use caller_number field
                 'call_type': call.call_type,
                 'outcome': call.outcome,
                 'duration': call.duration_formatted,

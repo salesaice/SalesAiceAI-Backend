@@ -63,10 +63,21 @@ class BaseAgent(models.Model):
     )
     
     # Hume AI Configuration
+    API_KEY_SOURCE_CHOICES = [
+        ('account_default', 'Use Account Default'),
+        ('custom', 'Custom Agent Key'),
+    ]
+    
+    api_key_source = models.CharField(
+        max_length=20,
+        choices=API_KEY_SOURCE_CHOICES,
+        default='account_default',
+        help_text="Whether to use account default or custom API key"
+    )
     hume_ai_api_key = models.CharField(
         max_length=200, 
         blank=True, 
-        help_text="Hume AI API key for this agent"
+        help_text="Custom Hume AI API key for this agent (only if api_key_source='custom')"
     )
     hume_ai_config = models.JSONField(
         default=dict, 

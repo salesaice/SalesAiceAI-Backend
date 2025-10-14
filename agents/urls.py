@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 from . import ai_training_views
 from . import ai_conversation_system
+from . import views_call_routing
 
 app_name = 'agents'
 
@@ -50,4 +51,16 @@ urlpatterns = [
     
     # 6. Dashboard  
     path('dashboard/summary/', views.dashboard_summary, name='dashboard-summary'),            # GET /agents/dashboard/summary/
+    
+    # 7. Call Routing (Inbound Agents)
+    path('call-routing/test/', views_call_routing.CallRoutingTestView.as_view(), name='call-routing-test'),         # POST /agents/call-routing/test/
+    path('call-routing/stats/', views_call_routing.CallRoutingStatsView.as_view(), name='call-routing-stats'),      # GET /agents/call-routing/stats/
+    path('call-routing/available/', views_call_routing.AvailableAgentsView.as_view(), name='available-agents'),     # GET /agents/call-routing/available/
+    path('call-routing/simulate/', views_call_routing.SimulateInboundCallView.as_view(), name='simulate-inbound'),  # POST /agents/call-routing/simulate/
+    
+    # 8. Agent Status API (Frontend Interface)
+    path('status/', views.agent_status_list, name='agent-status-list'),                      # GET /agents/status/
+    
+    # 9. Outbound Agents API (Simple & Fast)
+    path('outbound/', views.outbound_agents_list, name='outbound-agents-list'),               # GET /agents/outbound/
 ]

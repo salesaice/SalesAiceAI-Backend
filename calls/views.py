@@ -67,8 +67,8 @@ class CallSessionsAPIView(APIView):
                 } if call.user else None,
                 'agent': {
                     'id': str(call.agent.id),
-                    'name': call.agent.user.get_full_name(),
-                    'employee_id': call.agent.employee_id
+                    'name': call.agent.name,
+                    'type': call.agent.agent_type
                 } if call.agent else None,
                 'ai_summary': call.ai_summary,
                 'ai_sentiment': call.ai_sentiment,
@@ -130,81 +130,162 @@ class StartCallAPIView(APIView):
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
-                'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number to call'),
-                'call_type': openapi.Schema(type=openapi.TYPE_STRING, description='Type of call (inbound/outbound)'),
-                'priority': openapi.Schema(type=openapi.TYPE_STRING, description='Call priority (low/medium/high)')
+                'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='Phone number to call (must be entered)'),
+                'agent_id': openapi.Schema(type=openapi.TYPE_STRING, description='Agent ID who will initiate the call'),
+                'receiver_name': openapi.Schema(type=openapi.TYPE_STRING, description='Name of the person being called (optional)'),
+                'call_type': openapi.Schema(type=openapi.TYPE_STRING, description='Type of call', default='outbound'),
+                'priority': openapi.Schema(type=openapi.TYPE_STRING, description='Call priority (low/medium/high)', default='medium')
             },
-            required=['phone_number', 'call_type']
+            required=['phone_number', 'agent_id']
         ),
         responses={
-            201: "Call started successfully",
-            400: "Bad request",
-            401: "Unauthorized"
+            201: "Call initiated successfully",
+            400: "Bad request - missing parameters or invalid agent",
+            401: "Unauthorized",
+            404: "Agent not found"
         },
-        operation_description="Start a new call session",
+        operation_description="Start a new outbound call with specified agent",
         tags=['Calls'],
         security=[{'Bearer': []}]
     )
     def post(self, request):
+        # Get required parameters
         phone_number = request.data.get('phone_number')
+        agent_id = request.data.get('agent_id')
+        receiver_name = request.data.get('receiver_name', '')  # Optional
         call_type = request.data.get('call_type', 'outbound')
         priority = request.data.get('priority', 'medium')
         
+        # Validate required parameters
         if not phone_number:
             return Response({
                 'error': 'Phone number is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        if not agent_id:
+            return Response({
+                'error': 'Agent ID is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate and get the specified agent
+        try:
+            selected_agent = Agent.objects.get(
+                id=agent_id,
+                owner=request.user,  # Fixed: Only allow user's own agents
+                status='active',
+                agent_type__in=['outbound', 'both']  # Agent must be capable of outbound calls
+            )
+        except Agent.DoesNotExist:
+            return Response({
+                'error': 'Agent not found or not capable of outbound calls'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if agent is available
+        if selected_agent.status not in ['available', 'active']:
+            return Response({
+                'error': f'Agent is currently {selected_agent.status} and cannot initiate calls'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         # Create call session
         call_session = CallSession.objects.create(
             user=request.user,
-            phone_number=phone_number,
+            caller_number='+12295152040',  # Our Twilio number (caller)
+            callee_number=phone_number,   # Customer's number (who we're calling)
+            caller_name=receiver_name if receiver_name else '',  # Fixed: Use empty string instead of None
             call_type=call_type,
-            status='initiated'
+            status='initiated',
+            agent=selected_agent
         )
         
-        # Add to queue if no agents available
-        available_agent = Agent.objects.filter(
-            status='available',
-            is_active=True
-        ).first()
-        
-        if not available_agent:
-            # Add to queue
-            CallQueue.objects.create(
-                phone_number=phone_number,
-                priority=priority,
-                call_session=call_session
+        try:
+            # Update agent status to busy
+            selected_agent.status = 'on_call'
+            selected_agent.save()
+            
+            # Initiate actual Twilio call
+            from agents.twilio_service import TwilioCallService
+            twilio_service = TwilioCallService()
+            
+            # Prepare agent configuration
+            agent_config = {
+                'agent_id': str(selected_agent.id),
+                'name': selected_agent.name,
+                'voice_tone': selected_agent.voice_tone,
+                'greeting': f"Hello {receiver_name if receiver_name else ''}! This is {selected_agent.name} calling.",
+                'personality': selected_agent.voice_tone,
+                'business_knowledge': selected_agent.business_knowledge.exists()
+            }
+            
+            # Call context for personalization
+            call_context = {
+                'receiver_name': receiver_name,
+                'call_purpose': 'outbound_sales',  # Can be made configurable
+                'user_id': str(request.user.id),
+                'call_session_id': str(call_session.id)
+            }
+            
+            # Initiate the call through Twilio
+            call_result = twilio_service.initiate_call(
+                to=phone_number,
+                agent_config=agent_config,
+                call_context=call_context
+            )
+            
+            # Update call session with Twilio data
+            if call_result.get('call_sid'):
+                call_session.twilio_call_sid = call_result['call_sid']
+                call_session.status = 'connecting'
+                call_session.started_at = timezone.now()
+            else:
+                call_session.status = 'failed'
+                selected_agent.status = 'available'  # Free up the agent
+                selected_agent.save()
+            
+            call_session.save()
+            
+            # Broadcast real-time update
+            from .broadcasting import CallsBroadcaster
+            broadcaster = CallsBroadcaster()
+            broadcaster.broadcast_call_created(
+                call_session=call_session,
+                user_id=request.user.id,
+                agent_id=selected_agent.id
             )
             
             return Response({
-                'message': 'Call added to queue',
-                'call_id': str(call_session.id),
-                'status': 'queued'
+                'success': True,
+                'message': 'Call initiated successfully',
+                'call_data': {
+                    'call_id': str(call_session.id),
+                    'phone_number': phone_number,
+                    'receiver_name': receiver_name,
+                    'status': call_session.status,
+                    'twilio_call_sid': call_result.get('call_sid', 'Mock Call'),
+                    'agent': {
+                        'id': str(selected_agent.id),
+                        'name': selected_agent.name,
+                        'type': selected_agent.agent_type,
+                        'voice_tone': selected_agent.voice_tone
+                    },
+                    'call_result': call_result,
+                    'initiated_at': call_session.started_at.isoformat() if call_session.started_at else None
+                }
             }, status=status.HTTP_201_CREATED)
-        
-        # Assign to available agent
-        call_session.agent = available_agent
-        call_session.status = 'connecting'
-        call_session.save()
-        
-        # Update agent status
-        available_agent.status = 'on_call'
-        available_agent.save()
-        
-        # Here you would integrate with Twilio to actually make the call
-        # For now, we'll return a success response
-        
-        return Response({
-            'message': 'Call initiated successfully',
-            'call_id': str(call_session.id),
-            'agent': {
-                'id': str(available_agent.id),
-                'name': available_agent.user.get_full_name(),
-                'employee_id': available_agent.employee_id
-            },
-            'status': 'connecting'
-        }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            # Rollback agent status on error
+            selected_agent.status = 'available'
+            selected_agent.save()
+            
+            # Update call session status
+            call_session.status = 'failed'
+            call_session.save()
+            
+            return Response({
+                'success': False,
+                'error': f'Failed to initiate call: {str(e)}',
+                'call_id': str(call_session.id)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class TwilioWebhookAPIView(APIView):
@@ -212,11 +293,103 @@ class TwilioWebhookAPIView(APIView):
     permission_classes = []  # Twilio webhooks don't need authentication
     
     def post(self, request):
-        """Handle Twilio call status updates"""
+        """Handle Twilio webhooks for both inbound and outbound calls"""
         call_sid = request.data.get('CallSid')
         call_status = request.data.get('CallStatus')
+        from_number = request.data.get('From')
+        to_number = request.data.get('To')
+        direction = request.data.get('Direction', 'inbound')
         
-        # Find the call session
+        print(f"🔔 Twilio Webhook: {call_sid} - Status: {call_status} - Direction: {direction}")
+        
+        # Handle call based on status
+        if call_status in ['ringing', 'in-progress', None]:
+            # Call is connecting or active - provide TwiML response
+            return self._handle_active_call(request, call_sid, from_number, to_number, direction)
+        else:
+            # Call status update (answered, completed, failed, etc.)
+            return self._handle_status_update(request, call_sid, call_status)
+    
+    def _handle_active_call(self, request, call_sid, from_number, to_number, direction):
+        """Handle active call and provide TwiML response"""
+        response = VoiceResponse()
+        
+        try:
+            # Try to find existing call session
+            call_session = CallSession.objects.filter(twilio_call_sid=call_sid).first()
+            
+            if call_session and call_session.agent:
+                # Outbound call with assigned agent
+                agent = call_session.agent
+                receiver_name = call_session.caller_name or ""
+                
+                # Generate personalized greeting
+                if receiver_name:
+                    greeting = f"Hello {receiver_name}! This is {agent.name}. How are you doing today?"
+                else:
+                    greeting = f"Hello! This is {agent.name}. How are you doing today?"
+                    
+            else:
+                # Inbound call - assign available agent
+                agent = Agent.objects.filter(
+                    agent_type__in=['inbound', 'both'],
+                    status='active',
+                    is_active=True
+                ).first()
+                
+                if agent:
+                    # Create call session for inbound call
+                    if not call_session:
+                        call_session = CallSession.objects.create(
+                            caller_number=from_number,
+                            call_type='inbound',
+                            status='active',
+                            agent=agent,
+                            twilio_call_sid=call_sid,
+                            started_at=timezone.now()
+                        )
+                    
+                    greeting = f"Hello! This is {agent.name}. Thank you for calling. How can I help you today?"
+                    
+                    # Update agent status
+                    agent.status = 'on_call'
+                    agent.save()
+                else:
+                    # No agent available
+                    greeting = "Thank you for calling. All our agents are currently busy. Please call back later."
+                    response.say(greeting, voice='alice')
+                    response.hangup()
+                    return Response(str(response), content_type='application/xml')
+            
+            # Add greeting
+            response.say(greeting, voice='alice', language='en-US')
+            
+            # Add speech gathering for conversation
+            gather = response.gather(
+                input='speech',
+                timeout=10,
+                action=f'/api/calls/twilio-webhook/',  # Same endpoint handles responses
+                method='POST',
+                speech_timeout='auto'
+            )
+            gather.say("Please tell me how I can help you today.", voice='alice')
+            
+            # If no response
+            response.say("I didn't hear anything. Please let me know how I can assist you.")
+            response.redirect('/api/calls/twilio-webhook/')
+            
+            print(f"✅ Generated TwiML response for {call_sid}")
+            
+        except Exception as e:
+            print(f"❌ Error in active call handling: {str(e)}")
+            # Fallback response
+            response.say("I'm sorry, we're experiencing technical difficulties. Please try calling again.", voice='alice')
+            response.hangup()
+        
+        return Response(str(response), content_type='application/xml')
+    
+    def _handle_status_update(self, request, call_sid, call_status):
+        """Handle call status updates"""
         try:
             call_session = CallSession.objects.get(twilio_call_sid=call_sid)
             
@@ -242,11 +415,13 @@ class TwilioWebhookAPIView(APIView):
                     call_session.agent.save()
             
             call_session.save()
+            print(f"✅ Updated call {call_sid} status to {call_status}")
             
         except CallSession.DoesNotExist:
+            print(f"⚠️ Call session not found for SID: {call_sid}")
             pass
         
-        # Return TwiML response
+        # Return simple response for status updates
         response = VoiceResponse()
         return Response(str(response), content_type='application/xml')
 
@@ -351,3 +526,461 @@ class QuickActionsAPIView(APIView):
             })
         
         return Response({'actions': data}, status=status.HTTP_200_OK)
+
+
+# ====================================
+# CALL DATA API - Frontend Interface  
+# ====================================
+
+@swagger_auto_schema(
+    method='get',
+    responses={
+        200: openapi.Response(
+            description="Call data list",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "data": [
+                        {
+                            "id": "123e4567-e89b-12d3-a456-426614174000",
+                            "type": "inbound",
+                            "status": "completed",
+                            "caller_number": "+1234567890",
+                            "caller_name": "John Doe",
+                            "start_time": "2025-10-13T14:30:00Z",
+                            "end_time": "2025-10-13T14:35:00Z", 
+                            "duration": 300,
+                            "transcript": [
+                                {
+                                    "session_id": "session_123",
+                                    "speaker": "agent",
+                                    "message": "Hello, how can I help you?",
+                                    "timestamp": "2025-10-13T14:30:05Z"
+                                }
+                            ],
+                            "emotions": [
+                                {
+                                    "timestamp": 10.5,
+                                    "emotion": "joy",
+                                    "confidence": 0.85
+                                }
+                            ],
+                            "outcome": "converted",
+                            "summary": "Customer inquiry about product features",
+                            "agent_id": 1,
+                            "agent_name": "Sarah Agent",
+                            "scheduled_time": None
+                        }
+                    ],
+                    "count": 1
+                }
+            }
+        )
+    },
+    operation_description="Get call data for both inbound and outbound calls",
+    tags=['Call Data']
+)
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def call_data_list(request):
+    """
+    API endpoint that returns call data in the format:
+    interface CallData {
+      id: string;
+      type: 'inbound' | 'outbound';
+      status: 'active' | 'completed' | 'failed' | 'pending';
+      caller_number: string;
+      caller_name?: string;
+      start_time: string;
+      end_time?: string;
+      duration?: number;
+      transcript: TranscriptItem[];
+      emotions: Array<{timestamp: number; emotion: string; confidence: number;}>;
+      outcome?: 'answered' | 'voicemail' | 'busy' | 'no_answer' | 'converted' | 'not_interested';
+      summary?: string;
+      agent_id: number;
+      agent_name?: string;
+      scheduled_time?: string;
+    }
+    
+    Supports both inbound and outbound calls for all users.
+    """
+    try:
+        user = request.user
+        
+        # Get query parameters for filtering
+        call_type = request.GET.get('type')  # 'inbound' or 'outbound'
+        call_status = request.GET.get('status')  # 'active', 'completed', 'failed', 'pending' 
+        agent_id = request.GET.get('agent_id')
+        limit = min(int(request.GET.get('limit', 50)), 100)  # Max 100 calls
+        
+        # Base queryset - filter by user access level
+        if user.role == 'admin':
+            # Admin can see all calls
+            calls = CallSession.objects.all()
+        elif user.role == 'agent':
+            # Agent can see their own calls
+            try:
+                agent = user.agents.first()  # Get user's agent profile
+                if agent:
+                    calls = CallSession.objects.filter(agent=agent)
+                else:
+                    calls = CallSession.objects.none()
+            except:
+                calls = CallSession.objects.none()
+        else:
+            # Regular user can see their own calls
+            calls = CallSession.objects.filter(user=user)
+        
+        # Apply filters
+        if call_type in ['inbound', 'outbound']:
+            calls = calls.filter(call_type=call_type)
+            
+        if agent_id:
+            calls = calls.filter(agent_id=agent_id)
+        
+        # Status filtering (convert frontend status to Django status)
+        if call_status:
+            if call_status == 'active':
+                calls = calls.filter(status='answered', ended_at__isnull=True)
+            elif call_status == 'completed':
+                calls = calls.filter(status='completed')
+            elif call_status == 'failed':
+                calls = calls.filter(status__in=['failed', 'busy', 'no_answer', 'cancelled'])
+            elif call_status == 'pending':
+                calls = calls.filter(status__in=['initiated', 'ringing'])
+        
+        # Order by most recent and limit
+        calls = calls.select_related('agent').prefetch_related(
+            'transcripts', 'emotions'
+        ).order_by('-started_at')[:limit]
+        
+        # Serialize the data
+        from .serializers import CallDataSerializer
+        serializer = CallDataSerializer(calls, many=True)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': len(serializer.data),
+            'filters': {
+                'type': call_type,
+                'status': call_status,
+                'agent_id': agent_id,
+                'limit': limit
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': f'Failed to fetch call data: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@swagger_auto_schema(
+    method='get',
+    responses={200: "Call detail with full transcript and emotions"},
+    operation_description="Get detailed information for a specific call",
+    tags=['Call Data']
+)
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def call_detail(request, call_id):
+    """Get detailed information for a specific call"""
+    try:
+        user = request.user
+        
+        # Get the call with access control
+        if user.role == 'admin':
+            call = CallSession.objects.get(pk=call_id)
+        elif user.role == 'agent':
+            agent = user.agents.first()
+            if agent:
+                call = CallSession.objects.get(pk=call_id, agent=agent)
+            else:
+                return Response({
+                    'success': False,
+                    'error': 'Agent profile not found'
+                }, status=status.HTTP_403_FORBIDDEN)
+        else:
+            call = CallSession.objects.get(pk=call_id, user=user)
+        
+        # Serialize the call data
+        from .serializers import CallDataSerializer
+        serializer = CallDataSerializer(call)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except CallSession.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Call not found or access denied'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': f'Failed to fetch call detail: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@swagger_auto_schema(
+    method='post',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'call_id': openapi.Schema(type=openapi.TYPE_STRING, description='Call ID'),
+            'update_type': openapi.Schema(type=openapi.TYPE_STRING, description='Type of update'),
+            'data': openapi.Schema(type=openapi.TYPE_OBJECT, description='Update data')
+        }
+    ),
+    responses={200: "Real-time update broadcasted"},
+    operation_description="Broadcast real-time updates for active calls",
+    tags=['Call Data - Real-time']
+)
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def broadcast_live_update(request):
+    """
+    Endpoint to broadcast real-time updates during active calls
+    Used for live transcript, emotions, status changes etc.
+    """
+    try:
+        call_id = request.data.get('call_id')
+        update_type = request.data.get('update_type')
+        data = request.data.get('data', {})
+        
+        if not call_id or not update_type:
+            return Response({
+                'success': False,
+                'error': 'call_id and update_type are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Verify call exists and user has access
+        try:
+            call = CallSession.objects.get(pk=call_id)
+            
+            # Check access permissions
+            user = request.user
+            if user.role != 'admin':
+                if user.role == 'agent':
+                    agent = user.agents.first()
+                    if not agent or call.agent != agent:
+                        return Response({
+                            'success': False,
+                            'error': 'Access denied'
+                        }, status=status.HTTP_403_FORBIDDEN)
+                elif call.user != user:
+                    return Response({
+                        'success': False,
+                        'error': 'Access denied'
+                    }, status=status.HTTP_403_FORBIDDEN)
+        except CallSession.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Call not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Add timestamp if not provided
+        if 'timestamp' not in data:
+            from django.utils import timezone
+            data['timestamp'] = timezone.now().isoformat()
+        
+        # Broadcast the update
+        from .signals import broadcast_live_call_update
+        broadcast_live_call_update(call_id, update_type, data)
+        
+        return Response({
+            'success': True,
+            'message': 'Update broadcasted successfully',
+            'call_id': call_id,
+            'update_type': update_type
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': f'Failed to broadcast update: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@swagger_auto_schema(
+    method='get',
+    responses={200: "WebSocket connection info"},
+    operation_description="Get WebSocket connection information and instructions",
+    tags=['Call Data - Real-time']
+)
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def websocket_info(request):
+    """
+    Provide WebSocket connection information for real-time updates
+    """
+    try:
+        user = request.user
+        
+        # Get WebSocket URL (you might want to make this configurable)
+        ws_base_url = request.build_absolute_uri('/').replace('http', 'ws').replace('https', 'wss')
+        ws_url = f"{ws_base_url}ws/calls/full/"
+        
+        return Response({
+            'success': True,
+            'websocket': {
+                'url': ws_url,
+                'connection_info': {
+                    'user_id': user.id,
+                    'user_role': user.role,
+                    'groups': {
+                        'user_specific': f'user_{user.id}',
+                        'role_based': f'{user.role}_calls' if user.role in ['admin', 'agent'] else None,
+                        'general': 'calls_updates'
+                    }
+                },
+                'authentication': {
+                    'method': 'JWT Token in query parameter',
+                    'parameter': 'token',
+                    'example': f'{ws_url}?token=YOUR_JWT_TOKEN'
+                },
+                'message_types': {
+                    'outgoing': {
+                        'ping': 'Keep connection alive',
+                        'subscribe_to_call': 'Subscribe to specific call updates',
+                        'unsubscribe_from_call': 'Unsubscribe from call updates'
+                    },
+                    'incoming': {
+                        'call_created': 'New call initiated',
+                        'call_status_update': 'Call status changed',
+                        'call_ended': 'Call ended',
+                        'transcript_update': 'Real-time transcript',
+                        'emotion_update': 'Real-time emotion analysis',
+                        'call_data_update': 'Complete call data update',
+                        'live_call_update': 'Live updates during call'
+                    }
+                }
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': f'Failed to get WebSocket info: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([])  # No auth for Twilio webhooks
+def fallback_handler(request):
+    """
+    Fallback handler when main webhook fails
+    Agar main webhook fail ho jaye toh yeh backup response dega
+    """
+    try:
+        # Log the fallback trigger
+        call_sid = request.data.get('CallSid', 'Unknown')
+        from_number = request.data.get('From', 'Unknown')
+        
+        # Simple fallback response
+        response = VoiceResponse()
+        response.say(
+            "I'm sorry, we're experiencing technical difficulties. Please try calling again in a few minutes.",
+            voice='alice',
+            language='en-US'
+        )
+        
+        # Optional: Add a simple gather for basic interaction
+        gather = response.gather(
+            input='speech',
+            timeout=5,
+            speech_timeout='auto'
+        )
+        gather.say("If this is urgent, please say 'urgent' now.")
+        
+        # If still no response, end gracefully
+        response.say("Thank you for calling. We'll be back online shortly.")
+        response.hangup()
+        
+        return Response(str(response), content_type='application/xml')
+        
+    except Exception as e:
+        # Emergency fallback
+        response = VoiceResponse()
+        response.say("We apologize for the inconvenience. Please try again later.")
+        response.hangup()
+        return Response(str(response), content_type='application/xml')
+
+
+@api_view(['POST'])
+@permission_classes([])  # No auth for Twilio webhooks  
+def status_callback(request):
+    """
+    Handle call status changes from Twilio
+    Twilio se call status updates receive karta hai
+    """
+    try:
+        # Get call information from Twilio
+        call_sid = request.data.get('CallSid')
+        call_status = request.data.get('CallStatus')  # initiated, ringing, answered, completed, etc.
+        from_number = request.data.get('From')
+        to_number = request.data.get('To')
+        direction = request.data.get('Direction')  # inbound or outbound
+        duration = request.data.get('CallDuration')
+        
+        # Log the status change
+        print(f"📞 Call Status Update: {call_sid} - {call_status}")
+        
+        # Update database if call exists
+        try:
+            call_session = CallSession.objects.get(twilio_call_sid=call_sid)
+            
+            # Update status
+            old_status = call_session.status
+            call_session.status = call_status
+            
+            # Update timestamps based on status
+            if call_status == 'answered' and not call_session.answered_at:
+                call_session.answered_at = timezone.now()
+            elif call_status == 'completed' and not call_session.ended_at:
+                call_session.ended_at = timezone.now()
+                if duration:
+                    call_session.duration = int(duration)
+            elif call_status in ['failed', 'busy', 'no-answer', 'cancelled']:
+                call_session.ended_at = timezone.now()
+                call_session.status = 'failed'
+            
+            call_session.save()
+            
+            # Broadcast real-time update if status changed
+            if old_status != call_status:
+                from .broadcasting import CallBroadcasting
+                broadcaster = CallBroadcasting()
+                broadcaster.broadcast_call_status_update(
+                    call_session=call_session,
+                    user_id=call_session.user_id,
+                    agent_id=call_session.agent_id if call_session.agent else None
+                )
+            
+            print(f"✅ Updated call {call_sid}: {old_status} → {call_status}")
+            
+        except CallSession.DoesNotExist:
+            print(f"⚠️ Call session not found for SID: {call_sid}")
+            # Could be a call initiated outside our system
+            pass
+        
+        # Always return success to Twilio
+        return Response({
+            'status': 'received',
+            'call_sid': call_sid,
+            'call_status': call_status,
+            'timestamp': timezone.now().isoformat()
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"❌ Status callback error: {str(e)}")
+        # Still return success to avoid Twilio retries
+        return Response({
+            'status': 'error',
+            'message': str(e)
+        }, status=status.HTTP_200_OK)

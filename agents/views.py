@@ -30,7 +30,8 @@ from .serializers import (
     CampaignSerializer,
     CallQueueSerializer,
     AgentSummarySerializer,
-    AgentPerformanceSerializer
+    AgentPerformanceSerializer,
+    AgentStatusSerializer
 )
 
 User = get_user_model()
@@ -815,3 +816,145 @@ def delete_agent_enhanced(request, agent_id):
             'success': False,
             'error': 'Agent not found'
         }, status=status.HTTP_404_NOT_FOUND)
+
+
+# ====================================
+# AGENT STATUS API - Frontend Interface
+# ====================================
+
+@swagger_auto_schema(
+    method='get',
+    responses={
+        200: openapi.Response(
+            description="Agent status list",
+            examples={
+                "application/json": [
+                    {
+                        "id": 1,
+                        "name": "Sales Agent 1",
+                        "email": "user@example.com",
+                        "status": "available",
+                        "current_calls": 2
+                    },
+                    {
+                        "id": 2,
+                        "name": "Support Agent 1", 
+                        "email": "user@example.com",
+                        "status": "busy",
+                        "current_calls": 1
+                    }
+                ]
+            }
+        )
+    },
+    operation_description="Get all agents with status information for frontend interface",
+    tags=['Agent Status']
+)
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def agent_status_list(request):
+    """
+    API endpoint that returns agent status information in the format:
+    interface Agent {
+      id: number;
+      name: string;
+      email: string;
+      status: 'available' | 'busy' | 'away' | 'offline';
+      current_calls: number;
+    }
+    """
+    try:
+        # Get all agents for the authenticated user
+        agents = Agent.objects.filter(owner=request.user).order_by('name')
+        
+        # Serialize the data using the new serializer
+        serializer = AgentStatusSerializer(agents, many=True)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': agents.count()
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': f'Failed to get agent status: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ====================================
+# OUTBOUND AGENTS API - Simple & Fast
+# ====================================
+
+@swagger_auto_schema(
+    method='get',
+    responses={
+        200: openapi.Response(
+            description="Outbound agents list",
+            examples={
+                "application/json": {
+                    "success": True,
+                    "agents": [
+                        {
+                            "id": "uuid-here",
+                            "name": "Sales Agent 1"
+                        },
+                        {
+                            "id": "uuid-here", 
+                            "name": "Cold Call Agent"
+                        }
+                    ],
+                    "count": 2
+                }
+            }
+        )
+    },
+    operation_description="Get outbound agents - only ID and name for quick selection",
+    tags=['Outbound Agents']
+)
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def outbound_agents_list(request):
+    """
+    Get outbound agents - simplified API
+    Returns only agent ID and name for quick selection
+    
+    Response format:
+    {
+        "success": true,
+        "agents": [
+            {"id": "uuid", "name": "Agent Name"},
+            ...
+        ],
+        "count": number
+    }
+    """
+    try:
+        # Get all outbound agents for the authenticated user
+        outbound_agents = Agent.objects.filter(
+            owner=request.user,
+            agent_type__in=['outbound', 'both'],  # Include 'both' type agents
+            status='active'  # Only active agents
+        ).values('id', 'name').order_by('name')
+        
+        # Convert to simple list format
+        agents_data = [
+            {
+                'id': str(agent['id']),
+                'name': agent['name']
+            }
+            for agent in outbound_agents
+        ]
+        
+        return Response({
+            'success': True,
+            'agents': agents_data,
+            'count': len(agents_data)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': f'Failed to fetch agent status: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

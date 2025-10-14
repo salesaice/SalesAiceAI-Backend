@@ -47,6 +47,19 @@ class CallSession(models.Model):
     ended_at = models.DateTimeField(null=True, blank=True)
     duration = models.IntegerField(default=0)  # in seconds
     
+    # Call outcome and scheduling
+    OUTCOME_CHOICES = [
+        ('answered', 'Answered'),
+        ('voicemail', 'Voicemail'),
+        ('busy', 'Busy'),
+        ('no_answer', 'No Answer'),
+        ('converted', 'Converted'),
+        ('not_interested', 'Not Interested'),
+    ]
+    
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, blank=True)
+    scheduled_time = models.DateTimeField(null=True, blank=True)  # For scheduled calls
+    
     # AI Integration
     ai_summary = models.TextField(blank=True)
     ai_sentiment = models.CharField(max_length=20, blank=True)
@@ -145,6 +158,57 @@ class CallRecording(models.Model):
     
     def __str__(self):
         return f"Recording: {self.call_session.caller_number}"
+
+
+class CallTranscript(models.Model):
+    """Individual transcript entries for call sessions"""
+    SPEAKER_TYPES = [
+        ('agent', 'Agent'),
+        ('caller', 'Caller'),
+        ('customer', 'Customer'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    call_session = models.ForeignKey(CallSession, on_delete=models.CASCADE, related_name='transcripts')
+    
+    session_id = models.CharField(max_length=100)  # For grouping transcript items
+    speaker = models.CharField(max_length=20, choices=SPEAKER_TYPES)
+    message = models.TextField()
+    timestamp = models.DateTimeField()
+    
+    # Additional metadata
+    confidence = models.FloatField(default=0.0)
+    duration = models.FloatField(default=0.0)  # Duration of this speech segment
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['timestamp']
+    
+    def __str__(self):
+        return f"{self.speaker}: {self.message[:50]}..."
+
+
+class CallEmotion(models.Model):
+    """Emotion analysis data for call sessions"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    call_session = models.ForeignKey(CallSession, on_delete=models.CASCADE, related_name='emotions')
+    
+    timestamp = models.FloatField()  # Timestamp in seconds from call start
+    emotion = models.CharField(max_length=50)  # joy, sadness, anger, fear, etc.
+    confidence = models.FloatField()  # Confidence score 0.0 to 1.0
+    
+    # Additional emotion metadata
+    intensity = models.FloatField(default=0.0)
+    speaker = models.CharField(max_length=20, choices=CallTranscript.SPEAKER_TYPES, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['timestamp']
+    
+    def __str__(self):
+        return f"{self.emotion} ({self.confidence:.2f}) at {self.timestamp}s"
 
 
 class QuickAction(models.Model):

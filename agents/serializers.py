@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from .models import (
     Agent, 
     BusinessKnowledge, 
@@ -144,15 +145,24 @@ class AgentCreateUpdateSerializer(serializers.ModelSerializer):
         
         return value
     
+    def validate_auto_answer_enabled(self, value):
+        """Handle boolean conversion for multipart form data"""
+        if isinstance(value, str):
+            if value.lower() in ['true', '1', 'yes', 'on']:
+                return True
+            elif value.lower() in ['false', '0', 'no', 'off']:
+                return False
+            else:
+                raise serializers.ValidationError("Invalid boolean value")
+        return bool(value)
+    
     def validate(self, attrs):
         """Cross-field validation"""
         agent_type = attrs.get('agent_type')
         
-        # Auto-answer is only for inbound agents
-        if agent_type == 'outbound' and attrs.get('auto_answer_enabled'):
-            raise serializers.ValidationError({
-                'auto_answer_enabled': 'Auto-answer is only available for inbound agents'
-            })
+        # Note: Auto-answer can be used for both inbound and outbound agents
+        # Inbound: Auto-answer incoming calls
+        # Outbound: Auto-answer when customer picks up
         
         # Contacts file is only for outbound agents
         if agent_type == 'inbound' and 'contacts_file' in attrs:
@@ -177,6 +187,17 @@ class AgentCreateUpdateSerializer(serializers.ModelSerializer):
         # Set owner
         validated_data['owner'] = self.context['request'].user
         
+        # Auto-configure HUME AI integration for all agents
+        from django.conf import settings
+        validated_data['hume_ai_config'] = {
+            'evi_config_id': getattr(settings, 'HUME_AI_EVI_CONFIG_ID', '13624648-658a-49b1-81cb-a0f2e2b05de5'),
+            'api_key': getattr(settings, 'HUME_AI_API_KEY', ''),
+            'emotion_detection_enabled': True,
+            'adaptive_responses': True,
+            'confidence_threshold': 0.7,
+            'auto_configured': True
+        }
+        
         # Create agent
         agent = super().create(validated_data)
         
@@ -195,6 +216,26 @@ class AgentCreateUpdateSerializer(serializers.ModelSerializer):
         # Extract files from validated_data
         knowledge_files_upload = validated_data.pop('knowledge_files_upload', [])
         contacts_file = validated_data.pop('contacts_file', None)
+        
+        # Ensure HUME AI config is preserved/updated
+        from django.conf import settings
+        current_hume_config = instance.hume_ai_config or {}
+        
+        # Update or create HUME AI config if not present
+        if not current_hume_config.get('evi_config_id'):
+            validated_data['hume_ai_config'] = {
+                'evi_config_id': getattr(settings, 'HUME_AI_EVI_CONFIG_ID', '13624648-658a-49b1-81cb-a0f2e2b05de5'),
+                'api_key': getattr(settings, 'HUME_AI_API_KEY', ''),
+                'emotion_detection_enabled': True,
+                'adaptive_responses': True,
+                'confidence_threshold': 0.7,
+                'auto_configured': True,
+                'updated_at': timezone.now().isoformat()
+            }
+        else:
+            # Preserve existing config but update timestamp
+            current_hume_config['updated_at'] = timezone.now().isoformat()
+            validated_data['hume_ai_config'] = current_hume_config
         
         # Update agent
         agent = super().update(instance, validated_data)
@@ -385,3 +426,60 @@ class OperatingHoursSerializer(serializers.Serializer):
     sunday_start = serializers.TimeField(required=False, allow_null=True)
     sunday_end = serializers.TimeField(required=False, allow_null=True)
     timezone = serializers.CharField(default='UTC')
+
+
+class AgentStatusSerializer(serializers.ModelSerializer):
+    """
+    Serializer for agent status API matching the frontend interface:
+    interface Agent {
+      id: number;
+      name: string;
+      email: string;
+      status: 'available' | 'busy' | 'away' | 'offline';
+      current_calls: number;
+    }
+    """
+    id = serializers.IntegerField(source='pk', read_only=True)
+    email = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    current_calls = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Agent
+        fields = ['id', 'name', 'email', 'status', 'current_calls']
+    
+    def get_email(self, obj):
+        """Get owner's email for the agent"""
+        return obj.owner.email if obj.owner else ""
+    
+    def get_status(self, obj):
+        """Convert agent status to frontend format"""
+        # Map Django agent status to frontend status
+        status_mapping = {
+            'active': 'available',
+            'paused': 'offline',
+            'busy': 'busy',
+            'away': 'away'
+        }
+        
+        # Check if agent is currently in a call (you might need to implement this logic)
+        # For now, using the base status from the model
+        django_status = obj.status
+        
+        # Return mapped status or default to 'offline'
+        return status_mapping.get(django_status, 'offline')
+    
+    def get_current_calls(self, obj):
+        """Get current number of active calls for this agent"""
+        # This would typically check active calls from your call tracking system
+        # For now, return 0 as default - you can enhance this later
+        # You might want to check CallQueue or another model for active calls
+        try:
+            from .models import CallQueue
+            active_calls = CallQueue.objects.filter(
+                agent=obj,
+                status='in_progress'
+            ).count()
+            return active_calls
+        except:
+            return 0

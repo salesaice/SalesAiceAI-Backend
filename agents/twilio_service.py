@@ -18,6 +18,11 @@ class TwilioCallService:
         self.auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', '')
         self.phone_number = getattr(settings, 'TWILIO_PHONE_NUMBER', '')
         
+        # HUME AI Configuration
+        self.hume_api_key = getattr(settings, 'HUME_AI_API_KEY', '')
+        self.hume_base_url = getattr(settings, 'HUME_AI_BASE_URL', 'https://api.hume.ai/v0')
+        self.hume_evi_config_id = getattr(settings, 'HUME_AI_EVI_CONFIG_ID', '13624648-658a-49b1-81cb-a0f2e2b05de5')
+        
         if self.account_sid and self.auth_token:
             self.client = Client(self.account_sid, self.auth_token)
         else:
@@ -313,10 +318,10 @@ class TwilioCallService:
     
     def _generate_twiml_url(self, agent_config: Dict[str, Any], call_context: Dict[str, Any]) -> str:
         """Generate TwiML webhook URL"""
-        # This would be your server's webhook URL
-        base_url = getattr(settings, 'BASE_URL', 'https://yourdomain.com')
-        agent_id = agent_config.get('id', 'default')
-        return f"{base_url}/api/calls/twilio/handle-call/{agent_id}/"
+        # Use existing webhook endpoint that handles both inbound and outbound calls
+        base_url = getattr(settings, 'BASE_URL', 'https://aicegroup.pythonanywhere.com')
+        # Fixed to use existing working endpoint
+        return f"{base_url}/api/calls/twilio-webhook/"
     
     def _mock_call_response(self, to: str, direction: str) -> Dict[str, Any]:
         """Mock call response for development"""

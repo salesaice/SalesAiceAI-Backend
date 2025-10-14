@@ -699,7 +699,7 @@ class UserDashboardOverviewAPIView(APIView):
         for call in recent_calls:
             recent_calls_data.append({
                 'id': str(call.id),
-                'phone_number': call.phone_number,
+                'phone_number': call.caller_number,  # Fixed: use caller_number field  
                 'call_type': call.call_type,
                 'status': call.status,
                 'duration': call.call_duration_formatted,
@@ -1000,7 +1000,7 @@ class UserCallHistoryAPIView(APIView):
         for call in calls:
             call_data.append({
                 'id': str(call.id),
-                'phone_number': call.phone_number,
+                'phone_number': call.caller_number,  # Fixed: use caller_number field
                 'call_type': call.call_type,
                 'status': call.status,
                 'started_at': call.started_at.isoformat(),

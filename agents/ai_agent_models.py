@@ -273,8 +273,8 @@ class CallSession(models.Model):
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    ai_agent = models.ForeignKey(AIAgent, on_delete=models.CASCADE, related_name='call_sessions')
-    customer_profile = models.ForeignKey(CustomerProfile, on_delete=models.CASCADE, related_name='call_sessions')
+    ai_agent = models.ForeignKey(AIAgent, on_delete=models.CASCADE, related_name='call_sessions', null=True, blank=True)
+    customer_profile = models.ForeignKey(CustomerProfile, on_delete=models.CASCADE, related_name='call_sessions', null=True, blank=True)
     
     # Call Details
     phone_number = models.CharField(max_length=20)

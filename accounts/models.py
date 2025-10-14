@@ -23,6 +23,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     # Stripe integration
     stripe_customer_id = models.CharField(max_length=100, blank=True, null=True)
     
+    # Global AI API Keys (for all user's agents by default)
+    hume_ai_api_key = models.CharField(
+        max_length=200, 
+        blank=True, 
+        help_text="Default Hume AI API key for all user's agents"
+    )
+    
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     is_verified = models.BooleanField(default=False)
