@@ -984,3 +984,147 @@ def status_callback(request):
             'status': 'error',
             'message': str(e)
         }, status=status.HTTP_200_OK)
+
+
+# Voice Response Handler for Twilio (REQUIRED for agent response)
+@api_view(['GET', 'POST'])
+@permission_classes([permissions.AllowAny])  # Twilio webhook
+def voice_response_handler(request):
+    """
+    Voice response handler for Twilio calls
+    This endpoint is called when call is answered
+    """
+    from django.http import HttpResponse
+    
+    print(f"🎤 Voice Response Handler Called")
+    print(f"   Method: {request.method}")
+    print(f"   Data: {request.POST if request.method == 'POST' else request.GET}")
+    
+    try:
+        # Create TwiML response
+        response = VoiceResponse()
+        
+        # Get call SID from request
+        call_sid = request.POST.get('CallSid') or request.GET.get('CallSid')
+        from_number = request.POST.get('From') or request.GET.get('From')
+        to_number = request.POST.get('To') or request.GET.get('To')
+        
+        print(f"   Call SID: {call_sid}")
+        print(f"   From: {from_number} To: {to_number}")
+        
+        # Find the call session
+        if call_sid:
+            try:
+                call_session = CallSession.objects.get(twilio_call_sid=call_sid)
+                
+                # Get agent configuration
+                if call_session.agent:
+                    agent = call_session.agent
+                    
+                    # Simple greeting for now
+                    greeting = f"Hello! This is {agent.name}. How can I help you today?"
+                    
+                    # Add voice response
+                    response.say(greeting, voice='alice', language='en-US')
+                    
+                    # Add a pause and then gather input
+                    response.pause(length=1)
+                    
+                    # Gather customer response
+                    gather = response.gather(
+                        input='speech',
+                        timeout=10,
+                        speech_timeout='auto',
+                        action=f"{settings.BASE_URL}api/calls/voice-response/",
+                        method='POST'
+                    )
+                    
+                    gather.say("Please tell me how I can assist you.", voice='alice')
+                    
+                    # Fallback if no input
+                    response.say("I didn't hear anything. Please call back if you need assistance.", voice='alice')
+                    response.hangup()
+                    
+                    print(f"✅ Generated TwiML response for agent: {agent.name}")
+                    
+                else:
+                    # No agent assigned - basic response
+                    response.say("Hello! Thank you for calling. Please hold while we connect you.", voice='alice')
+                    response.pause(length=2)
+                    response.hangup()
+                    
+                    print(f"⚠️ No agent assigned to call")
+                
+            except CallSession.DoesNotExist:
+                print(f"❌ Call session not found for SID: {call_sid}")
+                response.say("Thank you for calling. We are experiencing technical difficulties.", voice='alice')
+                response.hangup()
+        
+        else:
+            # No call SID - basic response
+            print(f"❌ No Call SID provided")
+            response.say("Hello! Thank you for calling.", voice='alice')
+            response.hangup()
+        
+        # Return TwiML response
+        twiml_str = str(response)
+        print(f"📞 TwiML Response: {twiml_str}")
+        
+        return HttpResponse(twiml_str, content_type='text/xml')
+        
+    except Exception as e:
+        print(f"❌ Voice response error: {str(e)}")
+        
+        # Emergency fallback TwiML
+        emergency_response = VoiceResponse()
+        emergency_response.say("Thank you for calling. Please try again later.", voice='alice')
+        emergency_response.hangup()
+        
+        return HttpResponse(str(emergency_response), content_type='text/xml')
+
+
+# Call Status Handler for Twilio
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])  # Twilio webhook
+def call_status_handler(request):
+    """
+    Call status updates from Twilio
+    """
+    print(f"📊 Call Status Handler Called")
+    print(f"   Data: {request.POST}")
+    
+    try:
+        call_sid = request.POST.get('CallSid')
+        call_status = request.POST.get('CallStatus')
+        call_duration = request.POST.get('CallDuration')
+        
+        print(f"   Call SID: {call_sid}")
+        print(f"   Status: {call_status}")
+        print(f"   Duration: {call_duration}")
+        
+        if call_sid:
+            try:
+                call_session = CallSession.objects.get(twilio_call_sid=call_sid)
+                
+                # Update call status
+                call_session.status = call_status.lower()
+                
+                if call_status in ['completed', 'busy', 'no-answer', 'failed', 'canceled']:
+                    call_session.ended_at = timezone.now()
+                
+                call_session.save()
+                
+                print(f"✅ Updated call session: {call_session.id}")
+                
+                # Broadcast update
+                from .broadcasting import broadcast_call_status_update
+                broadcast_call_status_update(call_session)
+                
+            except CallSession.DoesNotExist:
+                print(f"❌ Call session not found for SID: {call_sid}")
+        
+        return Response({'status': 'success'}, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"❌ Call status error: {str(e)}")
+        return Response({'status': 'error'}, status=status.HTTP_200_OK)

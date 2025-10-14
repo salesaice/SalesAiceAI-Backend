@@ -9,6 +9,10 @@ urlpatterns = [
     path('ai-assistance/', views.HomeAIIntegrationAPIView.as_view(), name='homeai-assistance'),
     path('quick-actions/', views.QuickActionsAPIView.as_view(), name='quick-actions'),
     
+    # Voice Response for Twilio (REQUIRED for agent response)
+    path('voice-response/', views.voice_response_handler, name='voice-response'),   # POST/GET /api/calls/voice-response/
+    path('call-status/', views.call_status_handler, name='call-status'),           # POST /api/calls/call-status/
+    
     # Call Data API - Frontend Interface
     path('data/', views.call_data_list, name='call-data-list'),                    # GET /api/calls/data/
     path('data/<uuid:call_id>/', views.call_detail, name='call-detail'),          # GET /api/calls/data/{call_id}/

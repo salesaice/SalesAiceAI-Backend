@@ -13,7 +13,7 @@ SECRET_KEY = config('SECRET_KEY', default='wwvnx-f+3g$-)c0kjdpg+ib2^ipojc3%@6k-0
 DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
-    default='localhost,127.0.0.1,testserver,salesaice.pythonanywhere.com,salesaice.ai'
+    default='localhost,127.0.0.1,testserver,aicegroup.pythonanywhere.com,salesaice.pythonanywhere.com,salesaice.ai'
 ).split(',')
 CORS_ALLOW_CREDENTIALS = True
 
@@ -290,6 +290,9 @@ HUME_AI_EVI_CONFIG_ID = config('HUME_AI_EVI_CONFIG_ID', default='13624648-658a-4
 TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
 TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default='')
 TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER', default='')
+
+# Base URL for webhooks and external calls
+BASE_URL = config('BASE_URL', default='https://aicegroup.pythonanywhere.com/')
 
 # Webhook Security
 WEBHOOK_SECRET_KEY = config('WEBHOOK_SECRET_KEY', default='your-webhook-secret-key')
