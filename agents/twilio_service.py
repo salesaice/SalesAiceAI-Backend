@@ -318,10 +318,10 @@ class TwilioCallService:
     
     def _generate_twiml_url(self, agent_config: Dict[str, Any], call_context: Dict[str, Any]) -> str:
         """Generate TwiML webhook URL"""
-        # Use existing webhook endpoint that handles both inbound and outbound calls
+        # Use the voice response endpoint we created
         base_url = getattr(settings, 'BASE_URL', 'https://aicegroup.pythonanywhere.com')
-        # Fixed to use existing working endpoint
-        return f"{base_url}/api/calls/twilio-webhook/"
+        # Fixed to use the correct voice response endpoint
+        return f"{base_url}/api/calls/voice-response/"
     
     def _mock_call_response(self, to: str, direction: str) -> Dict[str, Any]:
         """Mock call response for development"""
