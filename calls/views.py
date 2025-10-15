@@ -208,16 +208,16 @@ class StartCallAPIView(APIView):
             
             # Start complete auto voice call with Hume AI
             auto_voice_result = auto_voice_system.start_complete_auto_call(
+                user=request.user,
                 phone_number=phone_number,
                 agent_id=str(selected_agent.id),
-                receiver_name=receiver_name,
                 call_context={
                     'call_type': call_type,
                     'priority': priority,
                     'initiated_via': 'start_call_api',
-                    'user_id': str(request.user.id)
-                },
-                user=request.user
+                    'user_id': str(request.user.id),
+                    'receiver_name': receiver_name  # Include receiver_name in context
+                }
             )
             
             if auto_voice_result.get('success'):
