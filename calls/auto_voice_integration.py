@@ -134,7 +134,7 @@ class AutoVoiceCallSystem:
         try:
             agent = Agent.objects.get(
                 id=agent_id,
-                user=user,  # Fixed: Use user instead of owner
+                owner=user,  # Fixed: Use owner instead of user
                 status='active'
             )
             
@@ -949,7 +949,7 @@ class AutoVoiceWebhookView(APIView):
             call_session = None
             if call_sid:
                 call_session = CallSession.objects.filter(
-                    external_call_id=call_sid
+                    twilio_call_sid=call_sid  # Fixed: Use twilio_call_sid instead of external_call_id
                 ).first()
             
             if not call_session:
