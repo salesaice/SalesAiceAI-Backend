@@ -1,6 +1,14 @@
 from django.urls import path
 from . import views
-from . import auto_voice_integration
+
+# Lazy import function for auto voice integration
+def get_auto_voice_call_view(*args, **kwargs):
+    from . import auto_voice_integration
+    return auto_voice_integration.AutoVoiceCallAPIView.as_view()(*args, **kwargs)
+
+def get_auto_voice_webhook_view(*args, **kwargs):
+    from . import auto_voice_integration
+    return auto_voice_integration.AutoVoiceWebhookView.as_view()(*args, **kwargs)
 
 urlpatterns = [
     path('sessions/', views.CallSessionsAPIView.as_view(), name='call-sessions'),
@@ -10,9 +18,9 @@ urlpatterns = [
     path('ai-assistance/', views.HomeAIIntegrationAPIView.as_view(), name='homeai-assistance'),
     path('quick-actions/', views.QuickActionsAPIView.as_view(), name='quick-actions'),
     
-    # AUTO VOICE SYSTEM - ENABLED FOR LIVE CALLS
-    path('auto-voice-call/', auto_voice_integration.AutoVoiceCallAPIView.as_view(), name='auto-voice-call'),
-    path('auto-voice-webhook/', auto_voice_integration.AutoVoiceWebhookView.as_view(), name='auto-voice-webhook'),
+    # AUTO VOICE SYSTEM - ENABLED FOR LIVE CALLS (lazy imported to avoid migration warnings)
+    path('auto-voice-call/', get_auto_voice_call_view, name='auto-voice-call'),
+    path('auto-voice-webhook/', get_auto_voice_webhook_view, name='auto-voice-webhook'),
     
     # Voice Response for Twilio (REQUIRED for agent response)
     path('voice-response/', views.voice_response_handler, name='voice-response'),   # POST/GET /api/calls/voice-response/
