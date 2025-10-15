@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import auto_voice_integration
 
 urlpatterns = [
     path('sessions/', views.CallSessionsAPIView.as_view(), name='call-sessions'),
@@ -8,6 +9,10 @@ urlpatterns = [
     path('twilio-webhook/', views.TwilioWebhookAPIView.as_view(), name='twilio-webhook'),
     path('ai-assistance/', views.HomeAIIntegrationAPIView.as_view(), name='homeai-assistance'),
     path('quick-actions/', views.QuickActionsAPIView.as_view(), name='quick-actions'),
+    
+    # AUTO VOICE SYSTEM - ENABLED FOR LIVE CALLS
+    path('auto-voice-call/', auto_voice_integration.AutoVoiceCallAPIView.as_view(), name='auto-voice-call'),
+    path('auto-voice-webhook/', auto_voice_integration.AutoVoiceWebhookView.as_view(), name='auto-voice-webhook'),
     
     # Voice Response for Twilio (REQUIRED for agent response)
     path('voice-response/', views.voice_response_handler, name='voice-response'),   # POST/GET /api/calls/voice-response/

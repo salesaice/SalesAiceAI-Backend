@@ -202,75 +202,150 @@ class StartCallAPIView(APIView):
             selected_agent.status = 'on_call'
             selected_agent.save()
             
-            # Initiate actual Twilio call
-            from agents.twilio_service import TwilioCallService
-            twilio_service = TwilioCallService()
+            # COMPLETE AUTO VOICE INTEGRATION
+            # Import auto voice system
+            from .auto_voice_integration import auto_voice_system
             
-            # Prepare agent configuration
-            agent_config = {
-                'agent_id': str(selected_agent.id),
-                'name': selected_agent.name,
-                'voice_tone': selected_agent.voice_tone,
-                'greeting': f"Hello {receiver_name if receiver_name else ''}! This is {selected_agent.name} calling.",
-                'personality': selected_agent.voice_tone,
-                'business_knowledge': selected_agent.business_knowledge.exists()
-            }
-            
-            # Call context for personalization
-            call_context = {
-                'receiver_name': receiver_name,
-                'call_purpose': 'outbound_sales',  # Can be made configurable
-                'user_id': str(request.user.id),
-                'call_session_id': str(call_session.id)
-            }
-            
-            # Initiate the call through Twilio
-            call_result = twilio_service.initiate_call(
-                to=phone_number,
-                agent_config=agent_config,
-                call_context=call_context
+            # Start complete auto voice call with Hume AI
+            auto_voice_result = auto_voice_system.start_complete_auto_call(
+                phone_number=phone_number,
+                agent_id=str(selected_agent.id),
+                receiver_name=receiver_name,
+                call_context={
+                    'call_type': call_type,
+                    'priority': priority,
+                    'initiated_via': 'start_call_api',
+                    'user_id': str(request.user.id)
+                },
+                user=request.user
             )
             
-            # Update call session with Twilio data
-            if call_result.get('call_sid'):
-                call_session.twilio_call_sid = call_result['call_sid']
+            if auto_voice_result.get('success'):
+                # Auto voice system succeeded
+                call_session.twilio_call_sid = auto_voice_result.get('twilio_call_sid')
                 call_session.status = 'connecting'
                 call_session.started_at = timezone.now()
-            else:
-                call_session.status = 'failed'
-                selected_agent.status = 'available'  # Free up the agent
-                selected_agent.save()
-            
-            call_session.save()
-            
-            # Broadcast real-time update
-            from .broadcasting import CallsBroadcaster
-            broadcaster = CallsBroadcaster()
-            broadcaster.broadcast_call_created(
-                call_session=call_session,
-                user_id=request.user.id,
-                agent_id=selected_agent.id
-            )
-            
-            return Response({
-                'success': True,
-                'message': 'Call initiated successfully',
-                'call_data': {
-                    'call_id': str(call_session.id),
-                    'phone_number': phone_number,
-                    'receiver_name': receiver_name,
-                    'status': call_session.status,
-                    'twilio_call_sid': call_result.get('call_sid', 'Mock Call'),
-                    'agent': {
-                        'id': str(selected_agent.id),
-                        'name': selected_agent.name,
-                        'type': selected_agent.agent_type,
-                        'voice_tone': selected_agent.voice_tone
-                    },
-                    'call_result': call_result,
-                    'initiated_at': call_session.started_at.isoformat() if call_session.started_at else None
+                
+                # Add auto voice integration data to notes
+                integration_data = {
+                    "auto_voice_system": True,
+                    "hume_session_id": auto_voice_result.get('hume_session_id'),
+                    "twilio_call_sid": auto_voice_result.get('twilio_call_sid'),
+                    "agent_voice_config": {
+                        "voice_tone": selected_agent.voice_tone,
+                        "voice_model": getattr(selected_agent, 'voice_model', 'en-US-female-1')
+                    }
                 }
-            }, status=status.HTTP_201_CREATED)
+                call_session.notes = f"Auto Voice Integration: {json.dumps(integration_data)}"
+                call_session.save()
+                
+                # Broadcast real-time update
+                from .broadcasting import CallsBroadcaster
+                broadcaster = CallsBroadcaster()
+                broadcaster.broadcast_call_created(
+                    call_session=call_session,
+                    user_id=request.user.id,
+                    agent_id=selected_agent.id
+                )
+                
+                return Response({
+                    'success': True,
+                    'message': 'Auto voice call initiated successfully with AI agent',
+                    'call_data': {
+                        'call_id': str(call_session.id),
+                        'phone_number': phone_number,
+                        'receiver_name': receiver_name,
+                        'status': call_session.status,
+                        'twilio_call_sid': auto_voice_result.get('twilio_call_sid'),
+                        'hume_session_id': auto_voice_result.get('hume_session_id'),
+                        'agent': {
+                            'id': str(selected_agent.id),
+                            'name': selected_agent.name,
+                            'type': selected_agent.agent_type,
+                            'voice_tone': selected_agent.voice_tone,
+                            'voice_model': getattr(selected_agent, 'voice_model', 'en-US-female-1')
+                        },
+                        'auto_features': auto_voice_result.get('auto_features', []),
+                        'integrations': auto_voice_result.get('integrations', {}),
+                        'estimated_connection_time': auto_voice_result.get('estimated_connection_time'),
+                        'initiated_at': call_session.started_at.isoformat() if call_session.started_at else None
+                    }
+                }, status=status.HTTP_201_CREATED)
+            
+            else:
+                # Auto voice system failed, fallback to basic Twilio
+                print("⚠️ Auto voice system failed, using fallback Twilio service")
+                
+                # Fallback to basic Twilio service
+                from agents.twilio_service import TwilioCallService
+                twilio_service = TwilioCallService()
+                
+                # Prepare agent configuration for fallback
+                agent_config = {
+                    'agent_id': str(selected_agent.id),
+                    'name': selected_agent.name,
+                    'voice_tone': selected_agent.voice_tone,
+                    'greeting': f"Hello {receiver_name if receiver_name else ''}! This is {selected_agent.name} calling.",
+                    'personality': selected_agent.voice_tone,
+                    'business_knowledge': selected_agent.business_knowledge.exists()
+                }
+                
+                # Call context for personalization
+                call_context = {
+                    'receiver_name': receiver_name,
+                    'call_purpose': 'outbound_sales',
+                    'user_id': str(request.user.id),
+                    'call_session_id': str(call_session.id)
+                }
+                
+                # Initiate the call through basic Twilio
+                call_result = twilio_service.initiate_call(
+                    to=phone_number,
+                    agent_config=agent_config,
+                    call_context=call_context
+                )
+                
+                # Update call session with Twilio data
+                if call_result.get('call_sid'):
+                    call_session.twilio_call_sid = call_result['call_sid']
+                    call_session.status = 'connecting'
+                    call_session.started_at = timezone.now()
+                else:
+                    call_session.status = 'failed'
+                    selected_agent.status = 'available'
+                    selected_agent.save()
+                
+                call_session.save()
+                
+                # Broadcast real-time update
+                from .broadcasting import CallsBroadcaster
+                broadcaster = CallsBroadcaster()
+                broadcaster.broadcast_call_created(
+                    call_session=call_session,
+                    user_id=request.user.id,
+                    agent_id=selected_agent.id
+                )
+                
+                return Response({
+                    'success': True,
+                    'message': 'Call initiated successfully (fallback mode)',
+                    'call_data': {
+                        'call_id': str(call_session.id),
+                        'phone_number': phone_number,
+                        'receiver_name': receiver_name,
+                        'status': call_session.status,
+                        'twilio_call_sid': call_result.get('call_sid', 'Mock Call'),
+                        'agent': {
+                            'id': str(selected_agent.id),
+                            'name': selected_agent.name,
+                            'type': selected_agent.agent_type,
+                            'voice_tone': selected_agent.voice_tone
+                        },
+                        'call_result': call_result,
+                        'fallback_mode': True,
+                        'initiated_at': call_session.started_at.isoformat() if call_session.started_at else None
+                    }
+                }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
             # Rollback agent status on error
@@ -311,82 +386,97 @@ class TwilioWebhookAPIView(APIView):
             return self._handle_status_update(request, call_sid, call_status)
     
     def _handle_active_call(self, request, call_sid, from_number, to_number, direction):
-        """Handle active call and provide TwiML response"""
-        response = VoiceResponse()
-        
+        """Handle active call and provide TwiML response with AUTO VOICE INTEGRATION"""
         try:
             # Try to find existing call session
             call_session = CallSession.objects.filter(twilio_call_sid=call_sid).first()
             
-            if call_session and call_session.agent:
-                # Outbound call with assigned agent
-                agent = call_session.agent
-                receiver_name = call_session.caller_name or ""
+            # Check if this is an auto voice call
+            if call_session and call_session.notes and "Auto Voice Integration" in call_session.notes:
+                # AUTO VOICE CALL - Route to auto voice webhook
+                print(f"🎭 Auto voice call detected: {call_sid}")
                 
-                # Generate personalized greeting
-                if receiver_name:
-                    greeting = f"Hello {receiver_name}! This is {agent.name}. How are you doing today?"
-                else:
-                    greeting = f"Hello! This is {agent.name}. How are you doing today?"
-                    
+                # Import auto voice integration
+                from .auto_voice_integration import AutoVoiceWebhookView
+                
+                # Create auto voice webhook view instance and handle request
+                auto_voice_webhook = AutoVoiceWebhookView()
+                return auto_voice_webhook.post(request)
+            
             else:
-                # Inbound call - assign available agent
-                agent = Agent.objects.filter(
-                    agent_type__in=['inbound', 'both'],
-                    status='active',
-                    is_active=True
-                ).first()
+                # REGULAR CALL - Use basic voice response
+                response = VoiceResponse()
                 
-                if agent:
-                    # Create call session for inbound call
-                    if not call_session:
-                        call_session = CallSession.objects.create(
-                            caller_number=from_number,
-                            call_type='inbound',
-                            status='active',
-                            agent=agent,
-                            twilio_call_sid=call_sid,
-                            started_at=timezone.now()
-                        )
+                if call_session and call_session.agent:
+                    # Outbound call with assigned agent
+                    agent = call_session.agent
+                    receiver_name = call_session.caller_name or ""
                     
-                    greeting = f"Hello! This is {agent.name}. Thank you for calling. How can I help you today?"
-                    
-                    # Update agent status
-                    agent.status = 'on_call'
-                    agent.save()
+                    # Generate personalized greeting
+                    if receiver_name:
+                        greeting = f"Hello {receiver_name}! This is {agent.name}. How are you doing today?"
+                    else:
+                        greeting = f"Hello! This is {agent.name}. How are you doing today?"
+                        
                 else:
-                    # No agent available
-                    greeting = "Thank you for calling. All our agents are currently busy. Please call back later."
-                    response.say(greeting, voice='alice')
-                    response.hangup()
-                    return Response(str(response), content_type='application/xml')
-            
-            # Add greeting
-            response.say(greeting, voice='alice', language='en-US')
-            
-            # Add speech gathering for conversation
-            gather = response.gather(
-                input='speech',
-                timeout=10,
-                action=f'/api/calls/twilio-webhook/',  # Same endpoint handles responses
-                method='POST',
-                speech_timeout='auto'
-            )
-            gather.say("Please tell me how I can help you today.", voice='alice')
-            
-            # If no response
-            response.say("I didn't hear anything. Please let me know how I can assist you.")
-            response.redirect('/api/calls/twilio-webhook/')
-            
-            print(f"✅ Generated TwiML response for {call_sid}")
-            
+                    # Inbound call - assign available agent
+                    agent = Agent.objects.filter(
+                        agent_type__in=['inbound', 'both'],
+                        status='active',
+                        is_active=True
+                    ).first()
+                    
+                    if agent:
+                        # Create call session for inbound call
+                        if not call_session:
+                            call_session = CallSession.objects.create(
+                                caller_number=from_number,
+                                call_type='inbound',
+                                status='active',
+                                agent=agent,
+                                twilio_call_sid=call_sid,
+                                started_at=timezone.now()
+                            )
+                        
+                        greeting = f"Hello! This is {agent.name}. Thank you for calling. How can I help you today?"
+                        
+                        # Update agent status
+                        agent.status = 'on_call'
+                        agent.save()
+                    else:
+                        # No agent available
+                        greeting = "Thank you for calling. All our agents are currently busy. Please call back later."
+                        response.say(greeting, voice='alice')
+                        response.hangup()
+                        return Response(str(response), content_type='application/xml')
+                
+                # Add greeting
+                response.say(greeting, voice='alice', language='en-US')
+                
+                # Add speech gathering for conversation
+                gather = response.gather(
+                    input='speech',
+                    timeout=10,
+                    action=f'/api/calls/twilio-webhook/',  # Same endpoint handles responses
+                    method='POST',
+                    speech_timeout='auto'
+                )
+                gather.say("Please tell me how I can help you today.", voice='alice')
+                
+                # If no response
+                response.say("I didn't hear anything. Please let me know how I can assist you.")
+                response.redirect('/api/calls/twilio-webhook/')
+                
+                print(f"✅ Generated basic TwiML response for {call_sid}")
+                return Response(str(response), content_type='application/xml')
+                
         except Exception as e:
             print(f"❌ Error in active call handling: {str(e)}")
             # Fallback response
+            response = VoiceResponse()
             response.say("I'm sorry, we're experiencing technical difficulties. Please try calling again.", voice='alice')
             response.hangup()
-        
-        return Response(str(response), content_type='application/xml')
+            return Response(str(response), content_type='application/xml')
     
     def _handle_status_update(self, request, call_sid, call_status):
         """Handle call status updates"""

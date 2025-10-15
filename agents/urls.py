@@ -3,6 +3,8 @@ from . import views
 from . import ai_training_views
 from . import ai_conversation_system
 from . import views_call_routing
+# from . import voice_api_views
+# from . import hume_twilio_integration
 
 app_name = 'agents'
 
@@ -22,9 +24,21 @@ urlpatterns = [
     path('ai/start-call/', ai_conversation_system.start_ai_call, name='ai-start-call'),               # POST /agents/ai/start-call/
     path('ai/complete-call/', ai_conversation_system.complete_ai_call, name='ai-complete-call'),      # POST /agents/ai/complete-call/
     
-    # WEBHOOKS - External Integration
+    # HUME AI VOICE SYSTEM - LIVE CALLS (Commented out temporarily)
+    # path('hume/start-call/', hume_twilio_integration.start_hume_ai_call, name='hume-start-call'),                    # POST /agents/hume/start-call/
+    # path('hume/test/', hume_twilio_integration.test_hume_integration, name='hume-test'),                             # POST /agents/hume/test/
+    
+    # VOICE SYSTEM ENDPOINTS - NEW (Commented out temporarily)
+    # path('voice/response/', voice_api_views.generate_agent_voice_response, name='voice-response'),                          # POST /agents/voice/response/
+    # path('voice/settings/', voice_api_views.update_agent_voice_settings, name='voice-settings-update'),                    # POST /agents/voice/settings/
+    # path('voice/test/', voice_api_views.test_agent_voice_output, name='voice-test'),                                       # POST /agents/voice/test/
+    # path('<uuid:agent_id>/voice-settings/', voice_api_views.get_agent_voice_settings, name='get-voice-settings'),          # GET /agents/{agent_id}/voice-settings/
+    # path('<uuid:agent_id>/live-conversation/', voice_api_views.live_voice_conversation, name='live-voice-conversation'),   # POST /agents/{agent_id}/live-conversation/
+    
+    # WEBHOOKS - External Integration  
     path('webhooks/hume-ai/', ai_conversation_system.hume_ai_webhook, name='hume-webhook'),           # POST /agents/webhooks/hume-ai/
     path('webhooks/twilio/', ai_conversation_system.twilio_voice_webhook, name='twilio-webhook'),     # POST /agents/webhooks/twilio/
+    # path('webhooks/hume-twilio/', hume_twilio_integration.hume_twilio_webhook_handler, name='hume-twilio-webhook'),  # POST /agents/webhooks/hume-twilio/
     
     # 2. Agent Features
     path('<uuid:agent_id>/analytics/', views.agent_analytics, name='agent-analytics'),        # GET /agents/{agent_id}/analytics/
