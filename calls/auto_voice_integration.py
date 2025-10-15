@@ -12,6 +12,8 @@ from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.utils import timezone
 from datetime import datetime
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 import json
@@ -931,9 +933,11 @@ class AutoVoiceCallAPIView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class AutoVoiceWebhookView(APIView):
     """
     Auto Voice Webhook View for handling Twilio voice responses
+    CSRF exempt for Twilio webhook calls
     """
     permission_classes = []  # Allow Twilio webhooks without authentication
     

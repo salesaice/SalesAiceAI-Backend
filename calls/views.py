@@ -8,6 +8,7 @@ from django.utils import timezone
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 import json
+import time
 
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse
@@ -1218,3 +1219,158 @@ def call_status_handler(request):
     except Exception as e:
         print(f"❌ Call status error: {str(e)}")
         return Response({'status': 'error'}, status=status.HTTP_200_OK)
+
+
+# REAL-TIME WEBHOOK TESTING - Local Development
+@api_view(['POST', 'GET'])
+@permission_classes([permissions.AllowAny])  # Allow Twilio and testing tools
+def test_webhook_handler(request):
+    """
+    Real-time webhook testing handler for local development
+    Real-time mein webhook response check karne ke liye
+    """
+    from django.http import HttpResponse
+    from datetime import datetime
+    import json
+    
+    try:
+        print(f"\n🔔 TEST WEBHOOK RECEIVED: {datetime.now()}")
+        print("=" * 60)
+        
+        # Log all incoming data
+        print(f"📋 Method: {request.method}")
+        
+        if request.method == 'POST':
+            # Handle both form data and raw body
+            try:
+                if hasattr(request, 'POST') and request.POST:
+                    print(f"� POST Data: {dict(request.POST)}")
+                    call_sid = request.POST.get('CallSid', 'TEST_CALL_' + str(int(time.time())))
+                    call_status = request.POST.get('CallStatus', 'in-progress')
+                    from_number = request.POST.get('From', '+923110571480')
+                    to_number = request.POST.get('To', '+12182315749')
+                else:
+                    # Fallback for raw body
+                    print(f"📦 Raw Body: {request.body}")
+                    call_sid = 'TEST_CALL_' + str(int(time.time()))
+                    call_status = 'in-progress'
+                    from_number = '+923110571480'
+                    to_number = '+12182315749'
+            except Exception as parse_error:
+                print(f"⚠️  Data parse warning: {parse_error}")
+                call_sid = 'TEST_CALL_' + str(int(time.time()))
+                call_status = 'in-progress'
+                from_number = '+923110571480'
+                to_number = '+12182315749'
+                
+        else:  # GET request for testing
+            call_sid = 'TEST_GET_CALL'
+            call_status = 'in-progress'
+            from_number = '+923110571480'
+            to_number = '+12182315749'
+        
+        print(f"🎯 CALL DETAILS:")
+        print(f"  📞 CallSid: {call_sid}")
+        print(f"  📊 Status: {call_status}")
+        print(f"  📱 From: {from_number}")
+        print(f"  📞 To: {to_number}")
+        
+        # Create TwiML response with real-time testing
+        response = VoiceResponse()
+        
+        # Dynamic voice response with current time
+        current_time = datetime.now().strftime('%H:%M:%S')
+        
+        if call_status == 'in-progress':
+            # Active call - agent speaks
+            greeting = f"""
+            Hello! This is your AI Voice Agent speaking from the webhook test handler.
+            Current time is {current_time}.
+            Call ID ending in {call_sid[-6:] if len(call_sid) > 6 else call_sid}.
+            Can you hear me clearly? This is a real-time webhook test.
+            """
+            
+            response.say(greeting.strip(), voice='alice', language='en-US')
+            response.pause(length=2)
+            
+            # Gather customer response
+            gather = response.gather(
+                input='speech',
+                timeout=10,
+                action='/api/calls/test-webhook/',
+                method='POST',
+                speech_timeout='auto'
+            )
+            gather.say("Please respond with yes or no to confirm you can hear me.", voice='alice')
+            
+            # If no response
+            response.say("Thank you for testing the webhook. The connection is working perfectly!", voice='alice')
+            
+        else:
+            # Call status update or ending
+            response.say(f"Webhook test completed at {current_time}. Thank you!", voice='alice')
+        
+        # Generate TwiML XML
+        twiml_xml = str(response)
+        
+        print(f"🎤 TWIML RESPONSE GENERATED:")
+        print("-" * 40)
+        print(twiml_xml)
+        print("-" * 40)
+        
+        # Log response details
+        print(f"✅ Response sent successfully")
+        print(f"📊 Content-Type: application/xml")
+        print(f"📝 Length: {len(twiml_xml)} characters")
+        print("=" * 60)
+        
+        return HttpResponse(twiml_xml, content_type='application/xml')
+        
+    except Exception as e:
+        print(f"❌ Webhook handler error: {str(e)}")
+        # Return simple TwiML even on error
+        response = VoiceResponse()
+        response.say("Hello, this is a test webhook response.", voice='alice')
+        return HttpResponse(str(response), content_type='application/xml')
+
+
+# WEBHOOK STATUS CHECKER - Real-time monitoring
+@api_view(['GET', 'POST'])
+@permission_classes([permissions.AllowAny])
+def webhook_status_checker(request):
+    """
+    Webhook status checker for real-time monitoring
+    Webhook ki status real-time mein check karne ke liye
+    """
+    from django.http import JsonResponse
+    
+    status_data = {
+        'timestamp': timezone.now().isoformat(),
+        'webhook_status': 'active',
+        'server_status': 'running',
+        'method': request.method,
+        'remote_addr': request.META.get('REMOTE_ADDR'),
+        'user_agent': request.META.get('HTTP_USER_AGENT', 'Unknown'),
+        'content_type': request.META.get('CONTENT_TYPE'),
+        'twilio_test': {
+            'expected_content_type': 'application/x-www-form-urlencoded',
+            'expected_fields': ['CallSid', 'CallStatus', 'From', 'To'],
+            'webhook_url': request.build_absolute_uri('/api/calls/test-webhook/'),
+            'status_url': request.build_absolute_uri('/api/calls/webhook-status/')
+        },
+        'environment': {
+            'debug': getattr(settings, 'DEBUG', False),
+            'base_url': getattr(settings, 'BASE_URL', 'Not configured')
+        }
+    }
+    
+    if request.method == 'POST':
+        status_data['post_data'] = dict(request.POST)
+        status_data['has_call_sid'] = 'CallSid' in request.POST
+        status_data['has_call_status'] = 'CallStatus' in request.POST
+    
+    print(f"🔍 WEBHOOK STATUS CHECK: {status_data['timestamp']}")
+    print(f"📊 Method: {request.method}")
+    print(f"🌐 Remote: {status_data['remote_addr']}")
+    
+    return JsonResponse(status_data, status=200)
