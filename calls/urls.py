@@ -28,6 +28,25 @@ def get_hume_config_test_view(*args, **kwargs):
     from . import hume_webhook_handlers
     return hume_webhook_handlers.hume_ai_config_test(*args, **kwargs)
 
+# Lazy import for PRODUCTION voice webhook (FINAL SYSTEM)
+def get_production_voice_webhook_view(*args, **kwargs):
+    from . import production_voice_webhook
+    return production_voice_webhook.get_production_voice_webhook_view()(*args, **kwargs)
+
+# Lazy import for FINAL PRODUCTION webhook (ALL 5 ISSUES FIXED)
+def get_final_production_voice_webhook_view(*args, **kwargs):
+    from . import final_production_voice_webhook
+    return final_production_voice_webhook.get_final_production_voice_webhook_view()(*args, **kwargs)
+
+# Lazy import for ULTIMATE PRODUCTION webhook (ALL NEW ISSUES FIXED)
+def get_ultimate_production_voice_webhook_view(*args, **kwargs):
+    from . import ultimate_production_voice_webhook
+    return ultimate_production_voice_webhook.get_ultimate_production_voice_webhook_view()(*args, **kwargs)
+
+def get_pure_hume_webhook_view(*args, **kwargs):
+    from .pure_hume_ai_webhook import PureHumeAIVoiceWebhook
+    return PureHumeAIVoiceWebhook.as_view()(*args, **kwargs)
+
 urlpatterns = [
     path('sessions/', views.CallSessionsAPIView.as_view(), name='call-sessions'),
     path('queue/', views.CallQueueAPIView.as_view(), name='call-queue'),
@@ -40,8 +59,11 @@ urlpatterns = [
     path('auto-voice-call/', get_auto_voice_call_view, name='auto-voice-call'),
     path('auto-voice-webhook/', get_auto_voice_webhook_view, name='auto-voice-webhook'),
     
-    # ENHANCED VOICE WEBHOOK - Real-time customer listening
+    # ENHANCED VOICE WEBHOOK - Real-time customer listening (OLD - has hardcoded responses)
     path('enhanced-voice-webhook/', get_enhanced_voice_webhook_view, name='enhanced-voice-webhook'),
+    
+    # PURE HUME AI WEBHOOK - NO hardcoded responses, 100% dynamic
+    path('pure-hume-webhook/', get_pure_hume_webhook_view, name='pure-hume-webhook'),
     
     # HUME AI WEBHOOKS - Real-time conversation handling
     path('hume-webhook/', get_hume_webhook_view, name='hume-webhook'),           # POST /api/calls/hume-webhook/
@@ -67,4 +89,13 @@ urlpatterns = [
     # Twilio Webhook Handlers
     path('fallback/', views.fallback_handler, name='fallback-handler'),           # POST /api/calls/fallback/
     path('status-callback/', views.status_callback, name='status-callback'),      # POST /api/calls/status-callback/
+    
+    # PRODUCTION VOICE WEBHOOK - Final system with all fixes
+    path('production-voice-webhook/', get_production_voice_webhook_view, name='production-voice-webhook'),  # POST /api/calls/production-voice-webhook/
+    
+    # FINAL PRODUCTION WEBHOOK - ALL 5 ISSUES FIXED
+    path('final-production-webhook/', get_final_production_voice_webhook_view, name='final-production-webhook'),  # POST /api/calls/final-production-webhook/
+    
+    # ULTIMATE PRODUCTION WEBHOOK - ALL NEW ISSUES FIXED (Voice matching, Training, Interrupts, Live Analysis, Live Config)
+    path('ultimate-production-webhook/', get_ultimate_production_voice_webhook_view, name='ultimate-production-webhook'),  # POST /api/calls/ultimate-production-webhook/
 ]
