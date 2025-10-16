@@ -22,13 +22,13 @@ def validate_and_get_agent(agent_id, user=None):
             agent = Agent.objects.get(
                 id=agent_id,
                 owner=user,
-                is_active=True
+                status='active'
             )
         else:
             # Any active agent
             agent = Agent.objects.get(
                 id=agent_id,
-                is_active=True
+                status='active'
             )
         
         logger.info(f"✅ Agent found: {agent.name} (ID: {agent.id})")
@@ -51,9 +51,9 @@ def validate_and_get_agent(agent_id, user=None):
         
         # List available agents for debugging
         if user:
-            available_agents = Agent.objects.filter(owner=user, is_active=True)
+            available_agents = Agent.objects.filter(owner=user, status='active')
         else:
-            available_agents = Agent.objects.filter(is_active=True)[:5]  # Limit to 5 for logs
+            available_agents = Agent.objects.filter(status='active')[:5]  # Limit to 5 for logs
         
         logger.info("📋 Available agents:")
         for agent in available_agents:
@@ -72,7 +72,7 @@ def create_default_agent_if_missing(user):
     """
     try:
         # Check if user has any agents
-        user_agents = Agent.objects.filter(owner=user, is_active=True)
+        user_agents = Agent.objects.filter(owner=user, status='active')
         
         if user_agents.exists():
             logger.info(f"User {user.email} already has {user_agents.count()} agent(s)")
@@ -86,7 +86,6 @@ def create_default_agent_if_missing(user):
             status='active',
             voice_tone='professional',
             description='Default voice agent for sales calls',
-            is_active=True,
             sales_script_text=f"""Hello [NAME]! This is {user.get_full_name() or 'your assistant'} calling from [COMPANY]. 
 
 I hope you're having a great day! I'm reaching out because I have something that could really benefit you. 
@@ -125,7 +124,7 @@ def get_user_agent_for_call(user, agent_id=None):
                 logger.warning(f"Requested agent {agent_id} not found, using fallback")
         
         # No specific agent or agent not found - get/create default
-        user_agents = Agent.objects.filter(owner=user, is_active=True)
+        user_agents = Agent.objects.filter(owner=user, status='active')
         
         if user_agents.exists():
             agent = user_agents.first()
@@ -149,7 +148,7 @@ def list_user_agents(user):
         logger.info(f"📋 User {user.email} agents:")
         for agent in agents:
             logger.info(f"   - {agent.name} (ID: {agent.id})")
-            logger.info(f"     Type: {agent.agent_type}, Status: {agent.status}, Active: {agent.is_active}")
+            logger.info(f"     Type: {agent.agent_type}, Status: {agent.status}")
             
             if hasattr(agent, 'sales_script_text') and agent.sales_script_text:
                 script_length = len(agent.sales_script_text)
