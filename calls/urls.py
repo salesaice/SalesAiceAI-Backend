@@ -10,10 +10,10 @@ def get_auto_voice_webhook_view(*args, **kwargs):
     from . import auto_voice_integration
     return auto_voice_integration.AutoVoiceWebhookView.as_view()(*args, **kwargs)
 
-# Lazy import for enhanced voice webhook
+# Lazy import for enhanced voice webhook (HYBRID SYSTEM)
 def get_enhanced_voice_webhook_view(*args, **kwargs):
     from . import enhanced_voice_webhook
-    return enhanced_voice_webhook.enhanced_auto_voice_webhook_view(*args, **kwargs)
+    return enhanced_voice_webhook.EnhancedAutoVoiceWebhookView.as_view()(*args, **kwargs)
 
 # Lazy import for HumeAI webhook handlers
 def get_hume_webhook_view(*args, **kwargs):

@@ -286,19 +286,26 @@ class AutoVoiceCallSystem:
                     "error": "Twilio not configured"
                 }
             
-            # DIRECT HUME AI WEBHOOK URL (from your screenshot)
-            hume_webhook_url = "https://api.hume.ai/v0/evi/twilio?config_id=13624648-658a-49b1-81cb-a0f2e2b05de5"
+            # HYBRID SYSTEM: HumeAI + Django Integration
+            # HumeAI handles voice processing, Django handles agent intelligence
             
-            # Enhanced Twilio call parameters with HumeAI DIRECT integration
-            call_params = {
-                "to": phone_number,
-                "from_": getattr(settings, 'TWILIO_PHONE_NUMBER', '+12295152040'),
-                "url": hume_webhook_url,  # DIRECT HumeAI webhook
+            # Create new HumeAI config if needed, otherwise use existing
+            hume_config_id = self.get_or_create_hume_config(agent_config)
+            
+            if hume_config_id:
+                # Use HumeAI for voice processing + Django for agent intelligence
+                hume_webhook_url = f"https://api.hume.ai/v0/evi/twilio?config_id={hume_config_id}"
+                
+                # Enhanced Twilio call parameters with HYBRID HumeAI+Django integration
+                call_params = {
+                    "to": phone_number,
+                    "from_": getattr(settings, 'TWILIO_PHONE_NUMBER', '+12295152040'),
+                    "url": hume_webhook_url,  # HumeAI handles voice, Django provides intelligence
                 "method": "POST",
-                "status_callback": f"{getattr(settings, 'BASE_URL', 'https://your-domain.com')}/api/calls/status-callback/",
+                "status_callback": f"{getattr(settings, 'BASE_URL', 'https://aicegroup.pythonanywhere.com')}/api/calls/status-callback/",
                 "status_callback_event": ["initiated", "ringing", "answered", "completed"],
                 "record": True,
-                "recording_status_callback": f"{getattr(settings, 'BASE_URL', 'https://your-domain.com')}/api/calls/recording-callback/",
+                "recording_status_callback": f"{getattr(settings, 'BASE_URL', 'https://aicegroup.pythonanywhere.com')}/api/calls/recording-callback/",
                 "machine_detection": "Enable",
                 "machine_detection_timeout": 30,
                 # Enhanced parameters for HumeAI integration
@@ -308,9 +315,9 @@ class AutoVoiceCallSystem:
             # Initiate enhanced call with HumeAI DIRECT integration
             call = self.twilio_client.calls.create(**call_params)
             
-            logger.info(f"🎭 Enhanced Twilio call with DIRECT HumeAI integration initiated: {call.sid}")
-            logger.info(f"🎯 HumeAI Webhook: {hume_webhook_url}")
-            logger.info(f"📞 Customer listening enabled: TRUE (via HumeAI)")
+            logger.info(f"🎭 Enhanced Twilio call with HYBRID HumeAI+Django integration initiated: {call.sid}")
+            logger.info(f"🎯 HumeAI Voice Webhook: {hume_webhook_url}")
+            logger.info(f"📞 Customer listening enabled: TRUE (via HumeAI + Django Intelligence)")
             
             return {
                 "success": True,
@@ -321,10 +328,37 @@ class AutoVoiceCallSystem:
                 "hume_ai_integration": {
                     "listening_enabled": True,
                     "dynamic_responses": True,
-                    "config_id": "13624648-658a-49b1-81cb-a0f2e2b05de5",
+                    "config_id": hume_config_id,
                     "real_time_processing": True,
-                    "direct_integration": True
+                    "hybrid_system": True,
+                    "django_intelligence": True
                 }
+            }
+        else:
+            # Fallback to Django-only system
+            base_url = getattr(settings, 'BASE_URL', 'https://aicegroup.pythonanywhere.com')
+            fallback_webhook_url = f"{base_url}/api/calls/enhanced-voice-webhook/"
+            
+            call_params["url"] = fallback_webhook_url
+            call = self.twilio_client.calls.create(**call_params)
+            
+            logger.info(f"🎭 Fallback: Twilio call with Django-only system initiated: {call.sid}")
+            logger.info(f"🎯 Django Webhook: {fallback_webhook_url}")
+            
+            return {
+                "success": True,
+                "call_sid": call.sid,
+                "status": call.status,
+                "webhook_url": fallback_webhook_url,
+                "agent_config": agent_config,
+                "hume_ai_integration": {
+                    "listening_enabled": True,
+                    "dynamic_responses": True,
+                    "config_id": "fallback",
+                    "real_time_processing": True,
+                    "django_fallback": True
+                }
+            }
             }
             
         except Exception as e:

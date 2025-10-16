@@ -20,10 +20,18 @@ logger = logging.getLogger(__name__)
 @method_decorator(csrf_exempt, name='dispatch')
 class EnhancedAutoVoiceWebhookView(APIView):
     """
-    Enhanced Auto Voice Webhook with Real-time Customer Listening
-    Customer ke har message ko sun kar intelligent response deta hai
+    HYBRID SYSTEM: Enhanced Auto Voice Webhook with HumeAI Integration
+    - Twilio → Django (orchestrator)
+    - Django → HumeAI API (voice processing)
+    - Django → Agent Intelligence (sales scripts)
+    - Real-time customer listening + intelligent responses
     """
     permission_classes = [permissions.AllowAny]  # Twilio webhook
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.hume_api_key = "mb5K22hbrOAvddJfkP4ZlScpMVHItgw0jfyxj0F1byGJ7j1w"
+        self.hume_base_url = "https://api.hume.ai/v0"
     
     def post(self, request):
         """Main webhook handler for customer conversations"""
