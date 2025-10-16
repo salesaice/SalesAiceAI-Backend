@@ -168,18 +168,37 @@ class StartCallAPIView(APIView):
                 'error': 'Agent ID is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validate and get the specified agent
-        try:
-            selected_agent = Agent.objects.get(
-                id=agent_id,
-                owner=request.user,  # Fixed: Only allow user's own agents
-                status='active',
-                agent_type__in=['outbound', 'both']  # Agent must be capable of outbound calls
-            )
-        except Agent.DoesNotExist:
+        # Validate and get the specified agent with enhanced validation
+        from .agent_validation_helper import get_user_agent_for_call
+        
+        selected_agent = get_user_agent_for_call(request.user, agent_id)
+        
+        if not selected_agent:
+            # List available agents for user
+            from .agent_validation_helper import list_user_agents
+            available_agents = list_user_agents(request.user)
+            
+            agent_list = []
+            for agent in available_agents:
+                agent_list.append({
+                    'id': str(agent.id),
+                    'name': agent.name,
+                    'type': agent.agent_type,
+                    'status': agent.status,
+                    'active': agent.is_active
+                })
+            
             return Response({
-                'error': 'Agent not found or not capable of outbound calls'
+                'error': f'Agent not found with ID: {agent_id}',
+                'available_agents': agent_list,
+                'suggestion': 'Please use one of the available agent IDs or create a new agent'
             }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if agent can handle outbound calls
+        if selected_agent.agent_type not in ['outbound', 'both']:
+            return Response({
+                'error': f'Agent "{selected_agent.name}" is not configured for outbound calls (Type: {selected_agent.agent_type})'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Check if agent is available
         if selected_agent.status not in ['available', 'active']:

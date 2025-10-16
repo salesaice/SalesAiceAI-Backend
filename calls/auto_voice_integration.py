@@ -277,7 +277,7 @@ class AutoVoiceCallSystem:
             }
     
     def initiate_auto_twilio_call(self, phone_number, agent_config, call_session):
-        """Auto Twilio call initiate karta hai with complete voice integration"""
+        """Enhanced Auto Twilio call with HumeAI direct integration"""
         try:
             if not self.twilio_client:
                 logger.error("Twilio client not available")
@@ -286,38 +286,49 @@ class AutoVoiceCallSystem:
                     "error": "Twilio not configured"
                 }
             
-            # Webhook URL for complete voice integration
-            webhook_url = f"{getattr(settings, 'BASE_URL', 'https://your-domain.com')}/api/calls/auto-voice-webhook/"
+            # DIRECT HUME AI WEBHOOK URL (from your screenshot)
+            hume_webhook_url = "https://api.hume.ai/v0/evi/twilio?config_id=13624648-658a-49b1-81cb-a0f2e2b05de5"
             
-            # Twilio call parameters with voice integration
+            # Enhanced Twilio call parameters with HumeAI DIRECT integration
             call_params = {
                 "to": phone_number,
                 "from_": getattr(settings, 'TWILIO_PHONE_NUMBER', '+12295152040'),
-                "url": webhook_url,
+                "url": hume_webhook_url,  # DIRECT HumeAI webhook
                 "method": "POST",
                 "status_callback": f"{getattr(settings, 'BASE_URL', 'https://your-domain.com')}/api/calls/status-callback/",
                 "status_callback_event": ["initiated", "ringing", "answered", "completed"],
                 "record": True,
                 "recording_status_callback": f"{getattr(settings, 'BASE_URL', 'https://your-domain.com')}/api/calls/recording-callback/",
                 "machine_detection": "Enable",
-                "machine_detection_timeout": 30
+                "machine_detection_timeout": 30,
+                # Enhanced parameters for HumeAI integration
+                "timeout": 60,  # Longer timeout for conversations
             }
             
-            # Initiate call
+            # Initiate enhanced call with HumeAI DIRECT integration
             call = self.twilio_client.calls.create(**call_params)
             
-            logger.info(f"Twilio call initiated: {call.sid}")
+            logger.info(f"🎭 Enhanced Twilio call with DIRECT HumeAI integration initiated: {call.sid}")
+            logger.info(f"🎯 HumeAI Webhook: {hume_webhook_url}")
+            logger.info(f"📞 Customer listening enabled: TRUE (via HumeAI)")
             
             return {
                 "success": True,
                 "call_sid": call.sid,
                 "status": call.status,
-                "webhook_url": webhook_url,
-                "agent_config": agent_config
+                "webhook_url": hume_webhook_url,
+                "agent_config": agent_config,
+                "hume_ai_integration": {
+                    "listening_enabled": True,
+                    "dynamic_responses": True,
+                    "config_id": "13624648-658a-49b1-81cb-a0f2e2b05de5",
+                    "real_time_processing": True,
+                    "direct_integration": True
+                }
             }
             
         except Exception as e:
-            logger.error(f"Twilio call initiation error: {str(e)}")
+            logger.error(f"Enhanced Twilio call initiation error: {str(e)}")
             return {
                 "success": False,
                 "error": str(e)

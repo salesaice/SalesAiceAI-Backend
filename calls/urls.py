@@ -10,6 +10,24 @@ def get_auto_voice_webhook_view(*args, **kwargs):
     from . import auto_voice_integration
     return auto_voice_integration.AutoVoiceWebhookView.as_view()(*args, **kwargs)
 
+# Lazy import for enhanced voice webhook
+def get_enhanced_voice_webhook_view(*args, **kwargs):
+    from . import enhanced_voice_webhook
+    return enhanced_voice_webhook.enhanced_auto_voice_webhook_view(*args, **kwargs)
+
+# Lazy import for HumeAI webhook handlers
+def get_hume_webhook_view(*args, **kwargs):
+    from . import hume_webhook_handlers
+    return hume_webhook_handlers.hume_ai_webhook(*args, **kwargs)
+
+def get_hume_status_view(*args, **kwargs):
+    from . import hume_webhook_handlers
+    return hume_webhook_handlers.hume_ai_status_callback(*args, **kwargs)
+
+def get_hume_config_test_view(*args, **kwargs):
+    from . import hume_webhook_handlers
+    return hume_webhook_handlers.hume_ai_config_test(*args, **kwargs)
+
 urlpatterns = [
     path('sessions/', views.CallSessionsAPIView.as_view(), name='call-sessions'),
     path('queue/', views.CallQueueAPIView.as_view(), name='call-queue'),
@@ -21,6 +39,14 @@ urlpatterns = [
     # AUTO VOICE SYSTEM - ENABLED FOR LIVE CALLS (lazy imported to avoid migration warnings)
     path('auto-voice-call/', get_auto_voice_call_view, name='auto-voice-call'),
     path('auto-voice-webhook/', get_auto_voice_webhook_view, name='auto-voice-webhook'),
+    
+    # ENHANCED VOICE WEBHOOK - Real-time customer listening
+    path('enhanced-voice-webhook/', get_enhanced_voice_webhook_view, name='enhanced-voice-webhook'),
+    
+    # HUME AI WEBHOOKS - Real-time conversation handling
+    path('hume-webhook/', get_hume_webhook_view, name='hume-webhook'),           # POST /api/calls/hume-webhook/
+    path('hume-status/', get_hume_status_view, name='hume-status'),             # POST /api/calls/hume-status/
+    path('hume-config/', get_hume_config_test_view, name='hume-config'),        # GET/POST /api/calls/hume-config/
     
     # Voice Response for Twilio (REQUIRED for agent response)
     path('voice-response/', views.voice_response_handler, name='voice-response'),   # POST/GET /api/calls/voice-response/
