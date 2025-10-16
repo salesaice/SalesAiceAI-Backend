@@ -857,12 +857,13 @@ def create_default_voice_response(agent):
     return Response(str(response), content_type='text/xml')
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class AutoVoiceCallAPIView(APIView):
     """
     Auto Voice Call API View Class
     Complete auto voice call system with Hume AI integration
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]  # Remove authentication for testing
     
     @swagger_auto_schema(
         operation_description="Start a complete auto voice call with AI agent",
