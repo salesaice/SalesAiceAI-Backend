@@ -538,18 +538,48 @@ def auto_voice_webhook_handler(request):
 
 
 def create_opening_voice_response(agent, call_session):
-    """Opening voice response create karta hai"""
+    """Opening voice response create karta hai with agent's sales script"""
     try:
         response = VoiceResponse()
         
         # Get customer name from call context
         customer_name = call_session.caller_name or ""
         
-        # Create personalized opening
-        if customer_name:
-            opening_message = f"Hello {customer_name}! This is {agent.name}. Thank you for your time. I'm calling because I have something that could really benefit you. How are you doing today?"
+        # Get agent's sales script - PRIORITY 1
+        opening_message = ""
+        
+        # Check if agent has sales script text
+        if hasattr(agent, 'sales_script_text') and agent.sales_script_text:
+            # Use agent's custom sales script
+            sales_script = agent.sales_script_text.strip()
+            
+            # Replace placeholders with actual data
+            if customer_name:
+                sales_script = sales_script.replace("[NAME]", customer_name)
+                sales_script = sales_script.replace("[Customer]", customer_name)
+            else:
+                sales_script = sales_script.replace("[NAME]", "")
+                sales_script = sales_script.replace("[Customer]", "")
+            
+            # Replace company placeholders if business info exists
+            if hasattr(agent, 'business_info') and agent.business_info:
+                company_name = agent.business_info.get('company_name', 'our company')
+                sales_script = sales_script.replace("[COMPANY]", company_name)
+                
+                product_name = agent.business_info.get('product_name', 'our solution')
+                sales_script = sales_script.replace("[PRODUCT]", product_name)
+            
+            opening_message = sales_script
+            logger.info(f"Using agent's custom sales script for {agent.name}")
+            
         else:
-            opening_message = f"Hello! This is {agent.name}. Thank you for taking my call. I'm reaching out because I have something that could really benefit you. How are you doing today?"
+            # Fallback to default script if no sales script
+            if customer_name:
+                opening_message = f"Hello {customer_name}! This is {agent.name}. Thank you for your time. I'm calling because I have something that could really benefit you. How are you doing today?"
+            else:
+                opening_message = f"Hello! This is {agent.name}. Thank you for taking my call. I'm reaching out because I have something that could really benefit you. How are you doing today?"
+            
+            logger.info(f"Using default script for agent {agent.name} - no custom sales script found")
         
         # Add voice response
         response.say(opening_message, voice='alice', language='en-US')
@@ -1036,17 +1066,47 @@ class AutoVoiceWebhookView(APIView):
             return create_default_voice_response(agent)
     
     def create_agent_greeting(self, agent, call_session):
-        """Create initial agent greeting"""
+        """Create initial agent greeting using agent's sales script"""
         try:
             # Get customer name from call session
             customer_name = getattr(call_session, 'callee_name', 'there')
             
-            # Create personalized greeting
-            greetings = [
-                f"Hello {customer_name}, this is {agent.name}. Thank you for your interest in our AI solutions. How can I help you today?",
-                f"Hi {customer_name}, {agent.name} here. I'm excited to discuss how our AI agents can benefit your business. What would you like to know?",
-                f"Good day {customer_name}, this is {agent.name} from AI Voice Solutions. I'm here to answer any questions about our voice AI technology."
-            ]
+            # Check if agent has custom sales script - PRIORITY 1
+            greeting = ""
+            
+            if hasattr(agent, 'sales_script_text') and agent.sales_script_text:
+                # Use agent's custom sales script
+                greeting = agent.sales_script_text.strip()
+                
+                # Replace placeholders with actual data
+                if customer_name and customer_name != 'there':
+                    greeting = greeting.replace("[NAME]", customer_name)
+                    greeting = greeting.replace("[Customer]", customer_name)
+                else:
+                    greeting = greeting.replace("[NAME]", "")
+                    greeting = greeting.replace("[Customer]", "")
+                
+                # Replace company/product placeholders
+                if hasattr(agent, 'business_info') and agent.business_info:
+                    company_name = agent.business_info.get('company_name', 'our company')
+                    greeting = greeting.replace("[COMPANY]", company_name)
+                    
+                    product_name = agent.business_info.get('product_name', 'our solution')
+                    greeting = greeting.replace("[PRODUCT]", product_name)
+                
+                logger.info(f"Using agent's sales script for greeting: {agent.name}")
+                
+            else:
+                # Fallback to default greetings
+                greetings = [
+                    f"Hello {customer_name}, this is {agent.name}. Thank you for your interest in our AI solutions. How can I help you today?",
+                    f"Hi {customer_name}, {agent.name} here. I'm excited to discuss how our AI agents can benefit your business. What would you like to know?",
+                    f"Good day {customer_name}, this is {agent.name} from AI Voice Solutions. I'm here to answer any questions about our voice AI technology."
+                ]
+                
+                import random
+                greeting = random.choice(greetings)
+                logger.info(f"Using default greeting for agent {agent.name} - no sales script found")
             
             import random
             greeting = random.choice(greetings)
