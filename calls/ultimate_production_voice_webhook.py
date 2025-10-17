@@ -35,6 +35,13 @@ django.setup()
 from agents.models import Agent
 from django.db import models
 
+# Import HumeAI Voice Setup for dynamic agent configuration
+try:
+    from .hume_ai_voice_setup import HumeAIVoiceIntegration
+except ImportError:
+    HumeAIVoiceIntegration = None
+    logger.warning("HumeAI Voice Setup not available")
+
 logger = logging.getLogger(__name__)
 
 # ISSUE 2 FIX: Training Database Model
@@ -107,6 +114,7 @@ class UltimateProductionVoiceWebhook(View):
     def get_hume_voice_configuration(self):
         """
         ISSUE 1 FIX: Get exact HumeAI voice configuration with proper API
+        Now integrated with HumeAIVoiceIntegration for dynamic agent configs
         """
         try:
             # FIXED: Use correct HumeAI EVI API endpoint
@@ -166,6 +174,38 @@ class UltimateProductionVoiceWebhook(View):
             "emotion": "inspiring",
             "configured": True
         }
+    
+    def create_or_update_agent_hume_config(self, agent):
+        """
+        NEW: Create or update HumeAI config dynamically from agent database
+        Uses HumeAIVoiceIntegration for real-time agent config creation
+        """
+        try:
+            if not HumeAIVoiceIntegration:
+                logger.warning("HumeAIVoiceIntegration not available, using static config")
+                return self.hume_config_id
+            
+            # Initialize HumeAI integration
+            hume_integration = HumeAIVoiceIntegration()
+            
+            # Create voice agent config from database
+            result = hume_integration.create_voice_agent(agent)
+            
+            if result and result.get('success'):
+                new_config_id = result['config_id']
+                logger.info(f"✅ Dynamic HumeAI config created: {new_config_id}")
+                logger.info(f"   Agent: {agent.name}")
+                logger.info(f"   Sales Script: {len(agent.sales_script_text)} chars")
+                
+                # Update current config ID for this session
+                return new_config_id
+            else:
+                logger.warning("Failed to create dynamic config, using static config")
+                return self.hume_config_id
+                
+        except Exception as e:
+            logger.error(f"Error creating dynamic HumeAI config: {e}")
+            return self.hume_config_id
     
     def get_twilio_voice_matching_hume(self):
         """

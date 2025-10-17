@@ -38,6 +38,13 @@ except ImportError:
     print("Warning: Using fallback Hume AI integration")
     LiveHumeAIIntegration = None
 
+# Import HumeAI Voice Setup for dynamic agent configuration
+try:
+    from .hume_ai_voice_setup import HumeAIVoiceIntegration
+except ImportError:
+    HumeAIVoiceIntegration = None
+    print("Warning: HumeAI Voice Setup not available")
+
 logger = logging.getLogger(__name__)
 
 class AutoVoiceCallSystem:
@@ -188,21 +195,43 @@ class AutoVoiceCallSystem:
                     "message": "Using fallback voice system"
                 }
             
-            # Hume AI session context
+            # NEW: Get agent database content
+            sales_script = agent.sales_script_text if agent.sales_script_text else "Hello! How can I help you today?"
+            
+            # Build knowledge base from agent files
+            knowledge_content = ""
+            if hasattr(agent, 'knowledge_files') and agent.knowledge_files:
+                for file_info in agent.knowledge_files:
+                    if 'content' in file_info:
+                        knowledge_content += f"{file_info.get('filename', 'Knowledge')}: {file_info['content']}\n\n"
+            
+            # Business context from agent
+            business_info = agent.business_info if hasattr(agent, 'business_info') and agent.business_info else {}
+            company_name = business_info.get('name', 'AI Voice Solutions')
+            
+            # Hume AI session context with AGENT DATABASE CONTENT
             session_context = {
                 "agent_id": str(agent.id),
                 "agent_name": agent.name,
                 "call_session_id": str(call_session.id),
                 "call_type": "auto_outbound_sales",
+                "sales_script": sales_script,  # NEW: From database
+                "knowledge_base": knowledge_content,  # NEW: From database
                 "agent_personality": {
                     "tone": getattr(agent, 'voice_tone', 'professional'),
-                    "approach": "consultative_sales",
-                    "objectives": ["build_rapport", "understand_needs", "present_solution", "close_deal"]
+                    "approach": "database_driven_sales", 
+                    "objectives": ["use_sales_script", "answer_from_knowledge", "learn_conversation"]
                 },
                 "business_context": {
-                    "company": "AI Voice Solutions",
-                    "product": "AI Voice Agents",
-                    "value_proposition": "Automated intelligent voice conversations"
+                    "company": company_name,
+                    "industry": business_info.get('industry', 'AI Voice Solutions'),
+                    "mission": business_info.get('mission', 'Automated intelligent voice conversations'),
+                    "website": getattr(agent, 'website_url', '') if hasattr(agent, 'website_url') else ''
+                },
+                "hume_config": {
+                    "config_id": "e4157120-69f8-40dc-bb48-af6fe658f01e",  # NEW CONFIG ID
+                    "use_database_content": True,
+                    "learning_enabled": True
                 }
             }
             
@@ -239,28 +268,42 @@ class AutoVoiceCallSystem:
     def configure_agent_for_auto_voice(self, agent, hume_session):
         """Agent ko auto voice responses ke liye configure karta hai"""
         try:
-            # Agent configuration for auto voice
+            # Get agent's content from database
+            sales_script = agent.sales_script_text if agent.sales_script_text else f"Hello! This is {agent.name}. How can I help you today?"
+            knowledge_files_count = len(agent.knowledge_files) if hasattr(agent, 'knowledge_files') and agent.knowledge_files else 0
+            business_name = agent.business_info.get('name', agent.name) if hasattr(agent, 'business_info') and agent.business_info else agent.name
+            
+            # Agent configuration for auto voice with DATABASE CONTENT
             agent_config = {
                 "agent_id": str(agent.id),
                 "name": agent.name,
                 "voice_tone": getattr(agent, 'voice_tone', 'professional'),
                 "voice_model": getattr(agent, 'voice_model', 'en-US-female-1'),
                 "hume_session_id": hume_session.get("session_id"),
+                "hume_config_id": "e4157120-69f8-40dc-bb48-af6fe658f01e",  # NEW CONFIG
                 "hume_integration_status": hume_session.get("status"),
                 "auto_response_enabled": True,
                 "real_time_learning": True,
                 "emotion_detection": True,
+                "database_content": {
+                    "sales_script": sales_script,
+                    "knowledge_files": knowledge_files_count,
+                    "business_name": business_name,
+                    "content_source": "agent_database"
+                },
                 "conversation_objectives": [
-                    "Engage customer warmly",
-                    "Identify customer needs", 
-                    "Present relevant solutions",
-                    "Handle objections empathetically",
-                    "Guide toward positive outcome"
+                    "Use sales script from database",
+                    "Answer questions from knowledge files", 
+                    "Learn from customer interactions",
+                    "Provide business-specific responses",
+                    "Adapt based on agent configuration"
                 ],
                 "fallback_responses": {
-                    "connection_issue": f"Hi! This is {agent.name}. I'm experiencing a slight connection issue. Let me try again.",
-                    "no_response": f"Hello! This is {agent.name}. Can you hear me clearly?",
-                    "technical_error": f"Hi! This is {agent.name}. I apologize for any technical difficulties. How can I help you today?"
+                    "connection_issue": f"Hi! This is {agent.name} from {business_name}. I'm experiencing a slight connection issue. Let me try again.",
+                    "no_response": f"Hello! This is {agent.name} from {business_name}. Can you hear me clearly?",
+                    "technical_error": f"Hi! This is {agent.name} from {business_name}. I apologize for any technical difficulties. How can I help you today?",
+                    "no_sales_script": sales_script,  # Use database sales script
+                    "knowledge_available": f"I have access to {knowledge_files_count} knowledge files to answer your questions."
                 }
             }
             
@@ -277,11 +320,36 @@ class AutoVoiceCallSystem:
             }
     
     def get_or_create_hume_config(self, agent_config):
-        """Get existing or create new HumeAI configuration for agent"""
+        """
+        Get existing or create new HumeAI configuration for agent
+        Now uses HumeAIVoiceIntegration for dynamic agent database configs
+        """
         try:
+            # Try to use HumeAIVoiceIntegration first (dynamic agent database)
+            if HumeAIVoiceIntegration:
+                try:
+                    hume_voice_integration = HumeAIVoiceIntegration()
+                    
+                    # Get agent from database
+                    agent_name = agent_config.get('name', 'AI Agent')
+                    agent = Agent.objects.filter(name=agent_name).first()
+                    
+                    if agent:
+                        logger.info(f"Creating dynamic HumeAI config for agent: {agent.name}")
+                        result = hume_voice_integration.create_voice_agent(agent)
+                        
+                        if result and result.get('success'):
+                            config_id = result['config_id']
+                            logger.info(f"✅ Dynamic HumeAI config created: {config_id}")
+                            logger.info(f"   Using agent database: sales_script, knowledge_files")
+                            return config_id
+                except Exception as e:
+                    logger.warning(f"Dynamic config creation failed: {e}, trying fallback")
+            
+            # Fallback to LiveHumeAIIntegration
             if not self.hume_integration:
                 logger.warning("HumeAI integration not available")
-                return None
+                return "13624648-658a-49b1-81cb-a0f2e2b05de5"  # Fallback config
             
             # Try to get existing config or create new one
             agent_name = agent_config.get('name', 'AI Agent')
@@ -313,7 +381,7 @@ class AutoVoiceCallSystem:
                 
         except Exception as e:
             logger.error(f"HumeAI config creation error: {str(e)}")
-            return None
+            return "13624648-658a-49b1-81cb-a0f2e2b05de5"  # Fallback config
 
     def initiate_auto_twilio_call(self, phone_number, agent_config, call_session):
         """Enhanced Auto Twilio call with HYBRID HumeAI+Django integration"""
@@ -366,9 +434,9 @@ class AutoVoiceCallSystem:
                     }
                 }
             else:
-                # Fallback to Django-only system
+                # Fallback to Ultimate Production system
                 base_url = getattr(settings, 'BASE_URL', 'https://aicegroup.pythonanywhere.com')
-                fallback_webhook_url = f"{base_url}/api/calls/enhanced-voice-webhook/"
+                fallback_webhook_url = f"{base_url}/api/calls/ultimate-production-webhook/"
                 
                 call_params = {
                     "to": phone_number,

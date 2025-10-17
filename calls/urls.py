@@ -62,8 +62,8 @@ urlpatterns = [
     # ENHANCED VOICE WEBHOOK - Real-time customer listening (OLD - has hardcoded responses)
     path('enhanced-voice-webhook/', get_enhanced_voice_webhook_view, name='enhanced-voice-webhook'),
     
-    # PURE HUME AI WEBHOOK - NO hardcoded responses, 100% dynamic
-    path('pure-hume-webhook/', get_pure_hume_webhook_view, name='pure-hume-webhook'),
+    # PURE HUME AI WEBHOOK - NOW REDIRECTED TO ULTIMATE PRODUCTION
+    path('pure-hume-webhook/', get_ultimate_production_voice_webhook_view, name='pure-hume-webhook'),
     
     # HUME AI WEBHOOKS - Real-time conversation handling
     path('hume-webhook/', get_hume_webhook_view, name='hume-webhook'),           # POST /api/calls/hume-webhook/
