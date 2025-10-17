@@ -70,8 +70,8 @@ urlpatterns = [
     path('hume-status/', get_hume_status_view, name='hume-status'),             # POST /api/calls/hume-status/
     path('hume-config/', get_hume_config_test_view, name='hume-config'),        # GET/POST /api/calls/hume-config/
     
-    # Voice Response for Twilio (REQUIRED for agent response)
-    path('voice-response/', views.voice_response_handler, name='voice-response'),   # POST/GET /api/calls/voice-response/
+    # Voice Response for Twilio (REQUIRED for agent response) - NOW USING ULTIMATE PRODUCTION WEBHOOK
+    path('voice-response/', get_ultimate_production_voice_webhook_view, name='voice-response'),   # POST/GET /api/calls/voice-response/
     path('call-status/', views.call_status_handler, name='call-status'),           # POST /api/calls/call-status/
     
     # REAL-TIME WEBHOOK TESTING - Local Development

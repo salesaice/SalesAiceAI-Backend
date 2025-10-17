@@ -59,7 +59,6 @@ class ConversationTraining(models.Model):
         ]
 
 @method_decorator(csrf_exempt, name='dispatch')
-@method_decorator(require_POST, name='dispatch')
 class UltimateProductionVoiceWebhook(View):
     """
     Ultimate production voice webhook with ALL issues fixed
@@ -327,6 +326,81 @@ class UltimateProductionVoiceWebhook(View):
                 "support_included": "Everything included: setup, training, support, CRM integration, and ongoing optimization."
             }
         }
+    def get(self, request):
+        """
+        Handle GET requests for initial call setup (when Twilio makes first contact)
+        """
+        try:
+            # Get Twilio parameters
+            call_sid = request.GET.get('CallSid', '')
+            from_number = request.GET.get('From', '')
+            
+            # Initialize conversation memory
+            if call_sid not in self.conversation_memory:
+                self.conversation_memory[call_sid] = {
+                    'turns': 0,
+                    'history': [],
+                    'agent': self.get_production_agent(),
+                    'sales_stage': 'opening',
+                    'learned_patterns': {},
+                    'customer_profile': {},
+                    'emotional_state': 'neutral',
+                    'training_data': []
+                }
+                
+                # Initialize interrupt detection
+                self.interrupt_detection_active[call_sid] = False
+                self.conversation_state[call_sid] = {
+                    'agent_speaking': False,
+                    'customer_speaking': False,
+                    'last_interrupt': None,
+                    'interrupt_count': 0
+                }
+                self.agent_speech_timing[call_sid] = {
+                    'start_time': None,
+                    'expected_duration': 0,
+                    'last_message_length': 0
+                }
+            
+            conversation = self.conversation_memory[call_sid]
+            
+            # Create TwiML response for initial greeting
+            response = VoiceResponse()
+            greeting = self.get_production_sales_opening(conversation['agent'])
+            twilio_voice = self.get_twilio_voice_matching_hume()
+            
+            # Create gather for customer input with interruption support
+            gather = response.gather(
+                input='speech',
+                timeout=8,
+                speech_timeout='auto',
+                action=request.build_absolute_uri(),
+                method='POST',
+                partial_result_callback=f"{request.build_absolute_uri()}?interrupt=true",
+                barge_in=True,
+                speech_model='phone_call',
+                enhanced=True
+            )
+            
+            # Deliver greeting
+            gather.say(greeting, voice=twilio_voice, language='en-US')
+            
+            # Fallback if no response
+            response.say("I didn't catch that. Please feel free to call back anytime!", voice=twilio_voice)
+            response.hangup()
+            
+            # Start timing tracking
+            self.start_agent_speech_timing(call_sid, greeting)
+            
+            print(f"✅ Initial call setup complete for {call_sid}")
+            return HttpResponse(str(response), content_type='text/xml')
+            
+        except Exception as e:
+            print(f"❌ Error in GET handler: {str(e)}")
+            response = VoiceResponse()
+            response.say("Thank you for calling. We're experiencing technical difficulties. Please try again later.", voice='alice')
+            response.hangup()
+            return HttpResponse(str(response), content_type='text/xml')
     
     def post(self, request):
         """
