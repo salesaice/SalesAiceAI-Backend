@@ -375,21 +375,24 @@ class UltimateProductionVoiceWebhook(View):
             # Create gather for customer input with interruption support
             gather = response.gather(
                 input='speech',
-                timeout=8,
+                timeout=15,  # LONGER timeout for customer to respond
                 speech_timeout='auto',
                 action=request.build_absolute_uri(),
                 method='POST',
                 partial_result_callback=f"{request.build_absolute_uri()}?interrupt=true",
                 barge_in=True,
                 speech_model='phone_call',
-                enhanced=True
+                enhanced=True,
+                profanity_filter=False,  # Don't filter customer speech
+                finish_on_key='#',  # Allow # to finish input
+                language='en-US'  # Specify language for better recognition
             )
             
             # Deliver greeting
             gather.say(greeting, voice=twilio_voice, language='en-US')
             
-            # Fallback if no response
-            response.say("I didn't catch that. Please feel free to call back anytime!", voice=twilio_voice)
+            # Fallback if no response - ASK DIRECT QUESTION
+            response.say("Hello? Are you there? Please tell me how I can help you today.", voice=twilio_voice)
             response.hangup()
             
             # Start timing tracking
@@ -510,18 +513,24 @@ class UltimateProductionVoiceWebhook(View):
                 # CRITICAL: Use GATHER with nested SAY for interruption
                 gather = response.gather(
                     input='speech',
-                    timeout=8,
+                    timeout=15,  # LONGER timeout for customer response
                     speech_timeout='auto',
                     action=request.build_absolute_uri(),
                     method='POST',
                     partial_result_callback=f"{request.build_absolute_uri()}?interrupt=true",
                     barge_in=True,  # CRITICAL: Allow customer to interrupt
                     speech_model='phone_call',  # Optimized for phone calls
-                    enhanced=True  # Better speech recognition
+                    enhanced=True,  # Better speech recognition
+                    profanity_filter=False,  # Don't filter speech
+                    finish_on_key='#',  # Allow # to finish
+                    language='en-US'  # Better recognition
                 )
                 
                 # Put greeting INSIDE gather so it can be interrupted
                 gather.say(greeting, voice=twilio_voice, language='en-US')
+                
+                # Better fallback if no response
+                response.say("Hello? I'm here to help you. Please tell me what you're looking for.", voice=twilio_voice)
                 
                 # CRITICAL: Start timing tracking for interruption detection
                 self.start_agent_speech_timing(call_sid, greeting)
@@ -586,20 +595,26 @@ class UltimateProductionVoiceWebhook(View):
                 
                 # Continue conversation with ENHANCED interrupt detection
                 if not self.should_end_call(speech_result, conversation):
+                    # Create gather for next customer input with LONGER timeout
                     gather = response.gather(
                         input='speech',
-                        timeout=8,
+                        timeout=15,  # INCREASED: Give customer more time to respond
                         speech_timeout='auto',
                         action=request.build_absolute_uri(),
                         method='POST',
                         partial_result_callback=f"{request.build_absolute_uri()}?interrupt=true",
                         barge_in=True,  # CRITICAL: Allow customer to interrupt
                         speech_model='phone_call',  # Optimized for phone calls
-                        enhanced=True  # Better speech recognition
+                        enhanced=True,  # Better speech recognition
+                        profanity_filter=False,  # Don't filter speech
+                        finish_on_key='#'  # Allow customer to press # to finish
                     )
                     
                     # CRITICAL: Put response INSIDE gather for interruption capability
                     gather.say(agent_response, voice=twilio_voice, language='en-US')
+                    
+                    # Add fallback if customer doesn't respond
+                    response.say("I'm still here if you have any questions. Please let me know how I can help you.", voice=twilio_voice)
                     
                     # CRITICAL: Start timing tracking for this response
                     self.start_agent_speech_timing(call_sid, agent_response)
@@ -918,28 +933,43 @@ class UltimateProductionVoiceWebhook(View):
     
     def get_production_sales_opening(self, agent):
         """
-        ISSUE 5 FIX: Production-grade sales opening with CLEAR agent name
+        DYNAMIC SALES OPENING - Uses agent's sales_script_text from database
         """
-        agent_name = agent.name if agent else "your AI sales consultant"
-        company_info = self.knowledge_base["company_info"]
-        
-        # FIXED: More prominent agent name introduction
-        openings = [
-            f"Hello! My name is {agent_name}, and I'm calling from {company_info['name']}. I'm reaching out because we've been helping businesses like yours increase their sales by 300% with our AI automation system. I believe I can solve some real challenges for you. What's your biggest frustration with generating consistent leads right now?",
-            
-            f"Hi there! This is {agent_name} calling from {company_info['name']}. We're the company that's helped over {company_info['clients']} triple their sales results using AI automation. I'm personally reaching out because I think we can dramatically improve your lead generation. What's working best for your sales team currently?",
-            
-            f"Good day! My name is {agent_name}, and I'm an AI sales specialist at {company_info['name']}. I focus on helping companies achieve 300% more qualified leads through AI automation, and I believe your business would be perfect for our system. What would an extra 50 high-quality leads per month be worth to your business?"
-        ]
-        
-        return random.choice(openings)
+        try:
+            if agent and hasattr(agent, 'sales_script_text') and agent.sales_script_text:
+                # Use agent's custom sales script from database
+                sales_script = agent.sales_script_text
+                agent_name = agent.name if agent else "your AI consultant"
+                
+                # Replace placeholders in the script
+                sales_script = sales_script.replace('{agent_name}', agent_name)
+                sales_script = sales_script.replace('{company_name}', agent.business_info.get('name', 'our company') if agent.business_info else 'our company')
+                
+                print(f"   ✅ Using custom sales script from agent: {agent.name}")
+                return sales_script
+            else:
+                # Fallback to agent's business info or default
+                agent_name = agent.name if agent else "your AI sales consultant"
+                company_name = agent.business_info.get('name', 'AI Sales Solutions') if agent and agent.business_info else 'AI Sales Solutions'
+                
+                default_script = f"Hello! This is {agent_name} calling from {company_name}. I'm reaching out to help you grow your business with our proven solutions. How can I assist you today?"
+                
+                print(f"   ⚠️ No custom script found, using default for agent: {agent_name}")
+                return default_script
+                
+        except Exception as e:
+            print(f"   ❌ Error getting sales script: {e}")
+            return "Hello! Thank you for taking my call. How can I help you with your business today?"
     
     def get_ultimate_ai_response(self, customer_speech, conversation, analysis_result):
         """
-        FIXED: Intelligent AI response using knowledge base and specific question handling
+        DYNAMIC AI RESPONSE - Uses knowledge base files + website + live learning
         """
         try:
-            print(f"   🎯 Generating intelligent response with knowledge base...")
+            print(f"   🎯 Generating intelligent response with dynamic knowledge...")
+            
+            # Get agent for context
+            agent = conversation.get('agent')
             
             # Use analysis results for targeted response
             emotion = analysis_result.get('emotion', 'neutral')
@@ -947,29 +977,34 @@ class UltimateProductionVoiceWebhook(View):
             objections = analysis_result.get('objections', [])
             buying_signals = analysis_result.get('buying_signals', [])
             
-            # CRITICAL: Priority 1 - Handle common conversation starters first
+            # PRIORITY 1: Handle common conversation starters first
             common_response = self.handle_common_conversation_patterns(customer_speech, conversation)
             if common_response:
                 return common_response
             
-            # Priority 2 - Direct question answering with knowledge base
-            specific_answer = self.get_specific_knowledge_answer(customer_speech, conversation)
-            if specific_answer:
-                return specific_answer
+            # PRIORITY 2: Knowledge base files + Website URL + Agent context
+            dynamic_answer = self.get_dynamic_knowledge_answer(customer_speech, conversation, agent)
+            if dynamic_answer:
+                return dynamic_answer
             
-            # Priority 3: Handle objections with learned patterns
+            # PRIORITY 3: Live learning from previous calls
+            learned_response = self.get_learned_response_from_calls(customer_speech, conversation)
+            if learned_response:
+                return learned_response
+            
+            # PRIORITY 4: Handle objections with training
             if objections:
                 return self.handle_objections_with_training(objections, conversation, analysis_result)
             
-            # Priority 4: Capitalize on buying signals
+            # PRIORITY 5: Capitalize on buying signals
             if buying_signals:
                 return self.respond_to_buying_signals(buying_signals, conversation)
             
-            # Priority 5: Emotion-based responses with training
+            # PRIORITY 6: Emotion-based responses with training
             if emotion != 'neutral':
                 return self.get_emotion_trained_response(emotion, customer_speech, conversation)
             
-            # Priority 6: Intent-based responses with knowledge base
+            # PRIORITY 7: Intent-based responses with knowledge base
             return self.get_intent_based_response(intent, customer_speech, conversation)
             
         except Exception as e:
@@ -1017,6 +1052,183 @@ class UltimateProductionVoiceWebhook(View):
         
         # No common pattern found
         return None
+
+    def get_dynamic_knowledge_answer(self, customer_speech, conversation, agent):
+        """
+        NEW: Dynamic knowledge from agent's files + website + business info
+        """
+        try:
+            print(f"   📚 Searching dynamic knowledge sources...")
+            
+            # Priority 1: Agent's knowledge files
+            if agent and hasattr(agent, 'knowledge_files') and agent.knowledge_files:
+                file_answer = self.search_agent_knowledge_files(customer_speech, agent)
+                if file_answer:
+                    print(f"   ✅ Found answer in knowledge files")
+                    return file_answer
+            
+            # Priority 2: Agent's website URL content
+            if agent and hasattr(agent, 'website_url') and agent.website_url:
+                website_answer = self.search_website_content(customer_speech, agent)
+                if website_answer:
+                    print(f"   ✅ Found answer from website content")
+                    return website_answer
+            
+            # Priority 3: Agent's business info
+            if agent and hasattr(agent, 'business_info') and agent.business_info:
+                business_answer = self.get_business_info_answer(customer_speech, agent)
+                if business_answer:
+                    print(f"   ✅ Found answer in business info")
+                    return business_answer
+            
+            # Priority 4: Fallback to static knowledge base
+            return self.get_specific_knowledge_answer(customer_speech, conversation)
+            
+        except Exception as e:
+            print(f"   ❌ Dynamic knowledge error: {e}")
+            return None
+    
+    def search_agent_knowledge_files(self, customer_speech, agent):
+        """
+        Search agent's uploaded knowledge files for relevant information
+        """
+        try:
+            if not agent.knowledge_files:
+                return None
+                
+            # Extract keywords from customer speech
+            keywords = self.extract_keywords(customer_speech)
+            
+            # Search through each knowledge file
+            for file_info in agent.knowledge_files:
+                if 'content' in file_info:
+                    content = file_info['content'].lower()
+                    
+                    # Check if keywords match content
+                    for keyword in keywords:
+                        if keyword.lower() in content:
+                            # Extract relevant section (200 chars around keyword)
+                            keyword_pos = content.find(keyword.lower())
+                            start = max(0, keyword_pos - 100)
+                            end = min(len(content), keyword_pos + 100)
+                            relevant_text = content[start:end]
+                            
+                            # Generate response based on relevant text
+                            return f"Based on our knowledge base, {relevant_text}. Would you like me to elaborate on any specific aspect?"
+            
+            return None
+            
+        except Exception as e:
+            print(f"   ❌ Knowledge file search error: {e}")
+            return None
+    
+    def search_website_content(self, customer_speech, agent):
+        """
+        Search agent's website for relevant information
+        """
+        try:
+            if not agent.website_url:
+                return None
+                
+            # Simple website info response based on URL
+            website_url = agent.website_url
+            business_name = agent.business_info.get('name', 'our company') if agent.business_info else 'our company'
+            
+            # Extract intent from customer speech
+            speech_lower = customer_speech.lower()
+            
+            if any(word in speech_lower for word in ['website', 'online', 'url', 'site']):
+                return f"You can find more information about {business_name} on our website at {website_url}. We keep all our latest updates, services, and contact information there. Is there something specific you'd like to know that I can help you with right now?"
+            
+            elif any(word in speech_lower for word in ['services', 'what do you do', 'products']):
+                return f"Great question! {business_name} offers a comprehensive range of services. You can see our full portfolio at {website_url}, but let me tell you about our most popular solution that could help your business right now. What's your main business challenge?"
+                
+            return None
+            
+        except Exception as e:
+            print(f"   ❌ Website search error: {e}")
+            return None
+    
+    def get_business_info_answer(self, customer_speech, agent):
+        """
+        Generate response based on agent's business info
+        """
+        try:
+            if not agent.business_info:
+                return None
+                
+            business_info = agent.business_info
+            speech_lower = customer_speech.lower()
+            
+            # Company info questions
+            if any(word in speech_lower for word in ['company', 'business', 'who are you']):
+                company_name = business_info.get('name', 'our company')
+                industry = business_info.get('industry', 'business solutions')
+                return f"We're {company_name}, specializing in {industry}. We focus on helping businesses like yours achieve better results. What specific challenges is your business facing right now?"
+            
+            # Location questions
+            elif any(word in speech_lower for word in ['location', 'where are you', 'address']):
+                location = business_info.get('location', 'multiple locations')
+                return f"We're based in {location}, but we serve clients nationwide. Location isn't a barrier to providing excellent service. What matters most is how we can help your business grow. What's your primary business goal?"
+                
+            return None
+            
+        except Exception as e:
+            print(f"   ❌ Business info error: {e}")
+            return None
+    
+    def get_learned_response_from_calls(self, customer_speech, conversation):
+        """
+        NEW: Learn from previous successful calls and apply knowledge
+        """
+        try:
+            # Get conversation training data
+            training_data = conversation.get('training_data', [])
+            
+            # Look for similar customer inputs in training history
+            for training_entry in training_data:
+                previous_input = training_entry.get('customer_input', '')
+                if self.calculate_similarity(customer_speech, previous_input) > 0.7:
+                    # Found similar input, use learned response pattern
+                    insights = training_entry.get('training_insights', {})
+                    effective_response = insights.get('effective_response_pattern')
+                    
+                    if effective_response:
+                        print(f"   🧠 Using learned response pattern")
+                        return effective_response
+            
+            return None
+            
+        except Exception as e:
+            print(f"   ❌ Learned response error: {e}")
+            return None
+    
+    def extract_keywords(self, text):
+        """
+        Extract important keywords from customer speech
+        """
+        # Simple keyword extraction
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were'}
+        words = text.lower().split()
+        keywords = [word for word in words if word not in stop_words and len(word) > 2]
+        return keywords[:5]  # Return top 5 keywords
+    
+    def calculate_similarity(self, text1, text2):
+        """
+        Calculate similarity between two text strings
+        """
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+        
+        if not words1 and not words2:
+            return 1.0
+        if not words1 or not words2:
+            return 0.0
+            
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        
+        return len(intersection) / len(union)
 
     def get_specific_knowledge_answer(self, customer_speech, conversation):
         """
