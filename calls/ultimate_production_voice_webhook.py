@@ -79,7 +79,7 @@ class UltimateProductionVoiceWebhook(View):
         
         # ISSUE 1 FIX: HumeAI Voice Configuration (ACTUAL WORKING CONFIG)
         self.hume_api_key = "mb5K22hbrOAvddJfkP4ZlScpMVHItgw0jfyxj0F1byGJ7j1w"
-        self.hume_config_id = "13624648-658a-49b1-81cb-a0f2e2b05de5"  # REAL CONFIG FROM API
+        self.hume_config_id = "14158840-3c40-40e6-84d3-43cb01c2f726"  # EXISTING CONFIG (Voice Agent - Sales Script)
         
         # Get HumeAI voice configuration
         self.hume_voice_config = self.get_hume_voice_configuration()

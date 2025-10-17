@@ -321,11 +321,14 @@ class AutoVoiceCallSystem:
     
     def get_or_create_hume_config(self, agent_config):
         """
-        Get existing or create new HumeAI configuration for agent
-        Now uses HumeAIVoiceIntegration for dynamic agent database configs
+        Use existing HumeAI configuration (no longer creates new)
+        Returns: 14158840-3c40-40e6-84d3-43cb01c2f726
         """
         try:
-            # Try to use HumeAIVoiceIntegration first (dynamic agent database)
+            # Always use existing config
+            existing_config_id = "14158840-3c40-40e6-84d3-43cb01c2f726"
+            
+            # Try to use HumeAIVoiceIntegration for caching
             if HumeAIVoiceIntegration:
                 try:
                     hume_voice_integration = HumeAIVoiceIntegration()
@@ -335,21 +338,19 @@ class AutoVoiceCallSystem:
                     agent = Agent.objects.filter(name=agent_name).first()
                     
                     if agent:
-                        logger.info(f"Creating dynamic HumeAI config for agent: {agent.name}")
+                        logger.info(f"Using existing HumeAI config for agent: {agent.name}")
                         result = hume_voice_integration.create_voice_agent(agent)
                         
                         if result and result.get('success'):
                             config_id = result['config_id']
-                            logger.info(f"✅ Dynamic HumeAI config created: {config_id}")
-                            logger.info(f"   Using agent database: sales_script, knowledge_files")
+                            logger.info(f"✅ Using HumeAI config: {config_id}")
                             return config_id
                 except Exception as e:
-                    logger.warning(f"Dynamic config creation failed: {e}, trying fallback")
+                    logger.warning(f"Cache check failed: {e}, using default config")
             
-            # Fallback to LiveHumeAIIntegration
-            if not self.hume_integration:
-                logger.warning("HumeAI integration not available")
-                return "13624648-658a-49b1-81cb-a0f2e2b05de5"  # Fallback config
+            # Return existing config
+            logger.info(f"Using default HumeAI config: {existing_config_id}")
+            return existing_config_id
             
             # Try to get existing config or create new one
             agent_name = agent_config.get('name', 'AI Agent')

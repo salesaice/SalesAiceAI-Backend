@@ -63,7 +63,7 @@ class PureHumeAIVoiceWebhook(APIView):
                 gather = response.gather(
                     input='speech',
                     timeout=12,
-                    action='/api/calls/pure-hume-webhook/',
+                    action='/api/calls/ultimate-production-webhook/',
                     method='POST'
                 )
                 

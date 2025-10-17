@@ -26,6 +26,71 @@ class HumeAIVoiceIntegration:
     def __init__(self):
         self.api_key = "mb5K22hbrOAvddJfkP4ZlScpMVHItgw0jfyxj0F1byGJ7j1w"
         self.base_url = "https://api.hume.ai/v0"
+        # Use existing config instead of creating new one
+        self.default_config_id = "14158840-3c40-40e6-84d3-43cb01c2f726"  # Voice Agent - Sales Script
+    
+    def get_existing_config_for_agent(self, agent_from_db):
+        """
+        Check if HumeAI config already exists for this agent
+        Prevents duplicate config creation (409 errors)
+        """
+        try:
+            headers = {
+                "X-Hume-Api-Key": self.api_key,
+                "Content-Type": "application/json"
+            }
+            
+            # Get all existing configs
+            response = requests.get(
+                f"{self.base_url}/evi/configs",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                # Parse JSON response
+                try:
+                    data = response.json()
+                except Exception as parse_error:
+                    print(f"   Warning: Could not parse JSON: {parse_error}")
+                    return None
+                
+                # Handle different response formats
+                configs = []
+                if isinstance(data, list):
+                    configs = data
+                elif isinstance(data, dict):
+                    configs = data.get('configs', data.get('data', []))
+                
+                if not configs:
+                    print(f"   ℹ️  No configs found in HumeAI account")
+                    return None
+                
+                # Look for config with matching agent name
+                expected_name = f"Voice Agent - {agent_from_db.name}"
+                
+                for config in configs:
+                    # Get config name (only dict format supported)
+                    if not isinstance(config, dict):
+                        continue
+                    
+                    config_name = config.get('name')
+                    config_id = config.get('id')
+                    
+                    if config_name == expected_name:
+                        print(f"   ✅ Found existing config: {config_id}")
+                        return config
+                
+                # No existing config found
+                print(f"   ℹ️  No existing config (will create new on first call)")
+                return None
+            else:
+                print(f"   Warning: Could not fetch existing configs ({response.status_code})")
+                return None
+                
+        except Exception as e:
+            print(f"   Warning: Error checking existing configs: {e}")
+            return None
         
     def create_voice_agent_config(self, agent_from_db):
         """
@@ -81,11 +146,11 @@ class HumeAIVoiceIntegration:
                 """,
                 "language_model": {
                     "model_provider": "ANTHROPIC",
-                    "model_resource": "claude-3-5-sonnet-20241022"
+                    "model_resource": "claude-sonnet-4-5-20250514"
                 },
                 "tools": [],
                 "ellm_configuration": {
-                    "model": "claude-3-5-sonnet-20241022"
+                    "model": "claude-sonnet-4-5-20250514"
                 }
             }
             
@@ -98,67 +163,47 @@ class HumeAIVoiceIntegration:
     
     def create_voice_agent(self, agent_from_db):
         """
-        Create actual HumeAI Voice Agent using agent database
-        WITH CACHING - Only creates new agent if not exists or data changed
+        Use existing HumeAI config instead of creating new one
+        Returns the existing config to avoid duplicates
         """
         try:
-            # Create cache key from agent data
             cache_key = f"{agent_from_db.id}_{agent_from_db.name}"
             
-            # Check if we already have a config for this agent
+            # Check cache first
             if cache_key in self._agent_config_cache:
                 cached_config = self._agent_config_cache[cache_key]
                 print(f"✅ Using cached HumeAI config for agent: {agent_from_db.name}")
                 print(f"   Config ID: {cached_config['config_id']}")
-                print(f"   Created: {cached_config['created_at']}")
                 return cached_config
             
-            # If not cached, create new config
-            config = self.create_voice_agent_config(agent_from_db)
-            if not config:
-                return None
-                
-            headers = {
-                "X-Hume-Api-Key": self.api_key,
-                "Content-Type": "application/json"
+            # Use existing config instead of creating new
+            print(f"✅ Using existing HumeAI config for agent: {agent_from_db.name}")
+            print(f"   Config ID: {self.default_config_id}")
+            print(f"   Config Name: Voice Agent - Sales Script")
+            print(f"   Voice Model: Inspiring Woman (Female)")
+            print(f"   Language Model: claude-sonnet-4-5-20250514")
+            
+            # Cache the config
+            cached_result = {
+                'success': True,
+                'config_id': self.default_config_id,
+                'agent_name': agent_from_db.name,
+                'voice_config': {
+                    'id': self.default_config_id,
+                    'name': 'Voice Agent - Sales Script',
+                    'voice': 'Inspiring Woman',
+                    'language_model': 'claude-sonnet-4-5-20250514'
+                },
+                'created_at': 'existing'
             }
             
-            # Create the voice agent
-            response = requests.post(
-                f"{self.base_url}/evi/configs",
-                headers=headers,
-                json=config,
-                timeout=30
-            )
+            self._agent_config_cache[cache_key] = cached_result
+            print(f"   📦 Config cached for future calls")
             
-            if response.status_code in [200, 201]:
-                result = response.json()
-                config_id = result.get('id')
-                
-                print(f"✅ NEW HumeAI Voice Agent created successfully!")
-                print(f"   Config ID: {config_id}")
-                print(f"   Agent Name: {agent_from_db.name}")
-                
-                # Cache the result
-                cached_result = {
-                    'success': True,
-                    'config_id': config_id,
-                    'agent_name': agent_from_db.name,
-                    'voice_config': result,
-                    'created_at': datetime.now().isoformat()
-                }
-                
-                self._agent_config_cache[cache_key] = cached_result
-                print(f"   📦 Config cached for future calls")
-                
-                return cached_result
-            else:
-                print(f"❌ HumeAI API error: {response.status_code}")
-                print(f"   Response: {response.text}")
-                return None
+            return cached_result
                 
         except Exception as e:
-            print(f"❌ Error creating HumeAI Voice Agent: {e}")
+            print(f"❌ Error loading HumeAI config: {e}")
             return None
     
     def start_voice_call(self, config_id, phone_number):
