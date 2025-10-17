@@ -14,7 +14,7 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
     default='localhost,127.0.0.1,testserver,aicegroup.pythonanywhere.com,salesaice.pythonanywhere.com,salesaice.ai'
-).split(',')
+).split(',') + ['testserver']  # Add testserver for local testing
 CORS_ALLOW_CREDENTIALS = True
 
 # Application definition
@@ -54,6 +54,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'core.twilio_csrf_middleware.TwilioCsrfExemptMiddleware',  # TWILIO CSRF FIX - MUST BE BEFORE CsrfViewMiddleware
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'allauth.account.middleware.AccountMiddleware',
@@ -334,6 +335,18 @@ else:
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
+    
+    # TWILIO CSRF CONFIGURATION - Production Fix
+    CSRF_TRUSTED_ORIGINS = [
+        'https://aicegroup.pythonanywhere.com',
+        'https://api.twilio.com',
+        'https://*.twilio.com',
+        'https://twilio.com',
+    ]
+    
+    # Additional CSRF exemptions for webhooks
+    CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access if needed
+    CSRF_USE_SESSIONS = False     # Don't require sessions for CSRF
 #     TWILIO_ACCOUNT_SID=your_account_sid_here
 # TWILIO_AUTH_TOKEN=your_auth_token_here
 # TWILIO_PHONE_NUMBER = "+1234567890"
