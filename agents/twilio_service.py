@@ -321,7 +321,7 @@ class TwilioCallService:
         # Use the voice response endpoint we created
         base_url = getattr(settings, 'BASE_URL', 'https://aicegroup.pythonanywhere.com')
         # Fixed to use the correct voice response endpoint
-        return f"{base_url}/api/calls/pure-hume-webhook/"
+        return f"{base_url}/api/calls/ultimate-production-webhook/"
     
     def _mock_call_response(self, to: str, direction: str) -> Dict[str, Any]:
         """Mock call response for development"""
