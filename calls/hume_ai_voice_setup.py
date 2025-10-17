@@ -7,6 +7,7 @@ import os
 import django
 import requests
 import json
+from datetime import datetime
 
 # Setup Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
@@ -16,8 +17,11 @@ from agents.models import Agent
 
 class HumeAIVoiceIntegration:
     """
-    Proper HumeAI Voice Agent integration
+    Proper HumeAI Voice Agent integration with caching
     """
+    
+    # Class-level cache for agent configs (prevents recreating same agent)
+    _agent_config_cache = {}
     
     def __init__(self):
         self.api_key = "mb5K22hbrOAvddJfkP4ZlScpMVHItgw0jfyxj0F1byGJ7j1w"
@@ -95,8 +99,21 @@ class HumeAIVoiceIntegration:
     def create_voice_agent(self, agent_from_db):
         """
         Create actual HumeAI Voice Agent using agent database
+        WITH CACHING - Only creates new agent if not exists or data changed
         """
         try:
+            # Create cache key from agent data
+            cache_key = f"{agent_from_db.id}_{agent_from_db.name}"
+            
+            # Check if we already have a config for this agent
+            if cache_key in self._agent_config_cache:
+                cached_config = self._agent_config_cache[cache_key]
+                print(f"✅ Using cached HumeAI config for agent: {agent_from_db.name}")
+                print(f"   Config ID: {cached_config['config_id']}")
+                print(f"   Created: {cached_config['created_at']}")
+                return cached_config
+            
+            # If not cached, create new config
             config = self.create_voice_agent_config(agent_from_db)
             if not config:
                 return None
@@ -118,16 +135,23 @@ class HumeAIVoiceIntegration:
                 result = response.json()
                 config_id = result.get('id')
                 
-                print(f"✅ HumeAI Voice Agent created successfully!")
+                print(f"✅ NEW HumeAI Voice Agent created successfully!")
                 print(f"   Config ID: {config_id}")
                 print(f"   Agent Name: {agent_from_db.name}")
                 
-                return {
+                # Cache the result
+                cached_result = {
                     'success': True,
                     'config_id': config_id,
                     'agent_name': agent_from_db.name,
-                    'voice_config': result
+                    'voice_config': result,
+                    'created_at': datetime.now().isoformat()
                 }
+                
+                self._agent_config_cache[cache_key] = cached_result
+                print(f"   📦 Config cached for future calls")
+                
+                return cached_result
             else:
                 print(f"❌ HumeAI API error: {response.status_code}")
                 print(f"   Response: {response.text}")
