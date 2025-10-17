@@ -23,6 +23,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.utils.decorators import method_decorator
 from django.views import View
+from django.middleware.csrf import get_token
+from django.views.decorators.cache import never_cache
 from twilio.twiml.voice_response import VoiceResponse
 import logging
 
@@ -59,9 +61,10 @@ class ConversationTraining(models.Model):
         ]
 
 @method_decorator(csrf_exempt, name='dispatch')
+@method_decorator(never_cache, name='dispatch')
 class UltimateProductionVoiceWebhook(View):
     """
-    Ultimate production voice webhook with ALL issues fixed
+    Ultimate production voice webhook with ALL issues fixed - CSRF EXEMPT for Twilio
     """
     
     def __init__(self):
