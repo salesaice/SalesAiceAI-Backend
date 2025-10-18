@@ -13,7 +13,8 @@ from decouple import config
 
 logger = logging.getLogger(__name__)
 
-HUME_AI_API_KEY = config('HUME_AI_API_KEY', default='')
+# HumeAI Configuration - Support both variable names
+HUME_AI_API_KEY = config('HUME_AI_API_KEY', default=config('HUME_API_KEY', default=''))
 
 
 class TwilioHumeStreamConsumer(AsyncWebsocketConsumer):

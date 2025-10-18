@@ -158,11 +158,11 @@ class HumeAIService:
     """Service for HumeAI API operations"""
     
     def __init__(self):
-        self.api_key = get_env('HUME_AI_API_KEY') or get_env('HUME_AI_API_KEY')
-        self.secret_key = get_env('HUME_SECRET_KEY') or get_env('HUME_SECRET_KEY')
+        self.api_key = get_env('HUME_AI_API_KEY') or get_env('HUME_API_KEY')
+        self.secret_key = get_env('HUME_SECRET_KEY') or get_env('HUME_AI_SECRET_KEY')
         self.config_id = get_env('HUME_CONFIG_ID')
         
-        if not all([self.api_key, self.config_id]):
+        if not self.api_key:
             raise ValueError("HumeAI credentials not configured properly")
     
     async def create_session(self, agent: HumeAgent) -> Dict[str, Any]:

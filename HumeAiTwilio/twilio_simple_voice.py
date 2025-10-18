@@ -19,9 +19,9 @@ TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN')
 TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER')
 
-# HumeAI Configuration
-HUME_AI_API_KEY = config('HUME_AI_API_KEY')
-HUME_CONFIG_ID = config('HUME_CONFIG_ID')
+# HumeAI Configuration - Try both variable names for compatibility
+HUME_AI_API_KEY = config('HUME_AI_API_KEY', default=config('HUME_API_KEY', default=''))
+HUME_CONFIG_ID = config('HUME_CONFIG_ID', default='')
 
 
 @csrf_exempt

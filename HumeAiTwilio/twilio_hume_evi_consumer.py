@@ -14,8 +14,8 @@ from decouple import config
 
 logger = logging.getLogger(__name__)
 
-# HumeAI Configuration
-HUME_AI_API_KEY = config('HUME_AI_API_KEY')
+# HumeAI Configuration - Support both variable names
+HUME_AI_API_KEY = config('HUME_AI_API_KEY', default=config('HUME_API_KEY', default=''))
 HUME_SECRET_KEY = config('HUME_SECRET_KEY', default='')
 
 

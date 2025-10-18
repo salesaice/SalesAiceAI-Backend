@@ -18,8 +18,8 @@ TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
 TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default='')
 TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER', default='')
 
-# HumeAI config
-HUME_AI_API_KEY = config('HUME_AI_API_KEY', default='')
+# HumeAI config - Support both variable names
+HUME_AI_API_KEY = config('HUME_AI_API_KEY', default=config('HUME_API_KEY', default=''))
 HUME_CONFIG_ID = config('HUME_CONFIG_ID', default='')
 
 # Your server URL (for webhooks)
