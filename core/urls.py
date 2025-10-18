@@ -39,6 +39,7 @@ urlpatterns = [
     path('api/subscriptions/', include('subscriptions.urls')),
     path('api/calls/', include('calls.urls')),
     path('api/agents/', include('agents.urls')),
+    path('api/hume-twilio/', include('HumeAiTwilio.urls')),  # HumeAI + Twilio Integration
     
     # Allauth URLs
     path('accounts/', include('allauth.urls')),

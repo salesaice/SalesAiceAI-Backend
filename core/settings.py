@@ -19,6 +19,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 # Application definition
 INSTALLED_APPS = [
+    'daphne',  # Must be FIRST for WebSocket support!
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -47,6 +48,7 @@ INSTALLED_APPS = [
     'calls',
     'agents',
     'dashboard',
+    'HumeAiTwilio',  # HumeAI + Twilio Integration Module
 ]
 
 MIDDLEWARE = [
