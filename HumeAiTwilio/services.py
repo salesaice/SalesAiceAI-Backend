@@ -158,7 +158,7 @@ class HumeAIService:
     """Service for HumeAI API operations"""
     
     def __init__(self):
-        self.api_key = get_env('HUME_API_KEY') or get_env('HUME_AI_API_KEY')
+        self.api_key = get_env('HUME_AI_API_KEY') or get_env('HUME_AI_API_KEY')
         self.secret_key = get_env('HUME_SECRET_KEY') or get_env('HUME_AI_SECRET_KEY')
         self.config_id = get_env('HUME_CONFIG_ID')
         

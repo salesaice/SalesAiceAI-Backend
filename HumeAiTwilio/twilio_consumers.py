@@ -13,7 +13,7 @@ from decouple import config
 
 logger = logging.getLogger(__name__)
 
-HUME_API_KEY = config('HUME_API_KEY', default='')
+HUME_AI_API_KEY = config('HUME_AI_API_KEY', default='')
 
 
 class TwilioHumeStreamConsumer(AsyncWebsocketConsumer):
@@ -128,7 +128,7 @@ class TwilioHumeStreamConsumer(AsyncWebsocketConsumer):
             return
         
         # Build HumeAI WebSocket URL
-        hume_url = f"wss://api.hume.ai/v0/assistant/chat?apiKey={HUME_API_KEY}"
+        hume_url = f"wss://api.hume.ai/v0/assistant/chat?apiKey={HUME_AI_API_KEY}"
         
         if self.agent.hume_config_id:
             hume_url += f"&configId={self.agent.hume_config_id}"

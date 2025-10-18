@@ -15,7 +15,7 @@ from decouple import config
 logger = logging.getLogger(__name__)
 
 # HumeAI Configuration
-HUME_API_KEY = config('HUME_API_KEY')
+HUME_AI_API_KEY = config('HUME_AI_API_KEY')
 HUME_SECRET_KEY = config('HUME_SECRET_KEY', default='')
 
 
@@ -133,12 +133,12 @@ class TwilioHumeEVIConsumer(AsyncWebsocketConsumer):
             
             # Headers
             headers = {
-                "X-Hume-Api-Key": HUME_API_KEY,
+                "X-Hume-Api-Key": HUME_AI_API_KEY,
             }
             
             # Query params
             params = {
-                "apiKey": HUME_API_KEY,
+                "apiKey": HUME_AI_API_KEY,
             }
             
             if self.agent.hume_config_id:

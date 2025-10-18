@@ -35,7 +35,7 @@ class Command(BaseCommand):
         # Check environment
         twilio_sid = config('TWILIO_ACCOUNT_SID', default='')
         twilio_number = config('TWILIO_PHONE_NUMBER', default='')
-        hume_key = config('HUME_API_KEY', default='')
+        hume_key = config('HUME_AI_API_KEY', default='')
         
         if not all([twilio_sid, twilio_number, hume_key]):
             self.stdout.write(self.style.ERROR("\n❌ Missing configuration!"))
@@ -43,7 +43,7 @@ class Command(BaseCommand):
             self.stdout.write("  - TWILIO_ACCOUNT_SID")
             self.stdout.write("  - TWILIO_AUTH_TOKEN")
             self.stdout.write("  - TWILIO_PHONE_NUMBER")
-            self.stdout.write("  - HUME_API_KEY")
+            self.stdout.write("  - HUME_AI_API_KEY")
             return
         
         self.stdout.write(f"\n✅ Twilio SID: {twilio_sid[:10]}...")

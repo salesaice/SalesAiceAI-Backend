@@ -52,7 +52,7 @@ class Command(BaseCommand):
         
         # Map alternative variable names
         var_mapping = {
-            'HUME_AI_API_KEY': ['HUME_API_KEY', 'HUME_AI_API_KEY'],
+            'HUME_AI_API_KEY': ['HUME_AI_API_KEY', 'HUME_AI_API_KEY'],
             'HUME_SECRET_KEY': ['HUME_AI_SECRET_KEY', 'HUME_SECRET_KEY']
         }
         
