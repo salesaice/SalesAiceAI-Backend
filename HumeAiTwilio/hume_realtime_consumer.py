@@ -43,6 +43,7 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
         try:
             # Decode base64 linear16 audio
             linear_data = base64.b64decode(linear_b64)
+            logger.info(f"🔄 Converting audio: {len(linear_data)} bytes linear16 → µ-law")
             
             # Convert linear16 PCM to µ-law
             mulaw_data = audioop.lin2ulaw(linear_data, 2)  # 2 bytes per sample (16-bit)
@@ -50,9 +51,11 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             # Encode back to base64
             mulaw_b64 = base64.b64encode(mulaw_data).decode('utf-8')
             
+            logger.info(f"✅ Conversion successful: {len(mulaw_data)} bytes µ-law")
             return mulaw_b64
         except Exception as e:
             logger.error(f"❌ Audio conversion error: {e}")
+            logger.error(f"❌ Input data length: {len(linear_b64) if linear_b64 else 0}")
             return linear_b64  # Return original if conversion fails
 
     async def connect(self):
@@ -304,8 +307,15 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
     async def send_to_twilio(self, audio_base64: str):
         """Send audio from HumeAI back to Twilio"""
         try:
+            if not audio_base64:
+                logger.warning(f"⚠️ Empty audio data received from HumeAI")
+                return
+            
             # Convert linear16 PCM from HumeAI to µ-law for Twilio
             mulaw_payload = self.convert_linear16_to_mulaw(audio_base64)
+            
+            # Log detailed audio info
+            logger.info(f"🔊 Audio conversion: {len(audio_base64)} → {len(mulaw_payload)} bytes")
             
             message = {
                 "event": "media",
@@ -315,8 +325,16 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                 }
             }
             
-            await self.send(text_data=json.dumps(message))
-            logger.info(f"📤 Sent audio to Twilio (converted to µ-law)")
+            # Log the actual message being sent
+            message_json = json.dumps(message)
+            logger.info(f"📤 Sending to Twilio: {len(message_json)} bytes total")
+            logger.info(f"📤 Stream ID: {self.stream_sid}")
+            logger.info(f"📤 Payload length: {len(mulaw_payload)} characters")
+            
+            await self.send(text_data=message_json)
+            logger.info(f"✅ Audio successfully sent to Twilio!")
             
         except Exception as e:
             logger.error(f"❌ Send to Twilio error: {str(e)}")
+            import traceback
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
