@@ -24,19 +24,41 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
     def convert_mulaw_to_linear16(self, mulaw_b64: str) -> str:
         """Convert µ-law audio from Twilio to linear16 PCM for HumeAI"""
         try:
+            if not mulaw_b64:
+                logger.warning(f"⚠️ Empty µ-law data provided for conversion")
+                return ""
+            
             # Decode base64 µ-law audio
             mulaw_data = base64.b64decode(mulaw_b64)
+            
+            if len(mulaw_data) == 0:
+                logger.warning(f"⚠️ Empty µ-law data after base64 decode")
+                return ""
             
             # Convert µ-law to linear16 PCM
             linear_data = audioop.ulaw2lin(mulaw_data, 2)  # 2 bytes per sample (16-bit)
             
+            # Validate conversion
+            if len(linear_data) != len(mulaw_data) * 2:
+                logger.warning(f"⚠️ Unexpected conversion size: {len(mulaw_data)} → {len(linear_data)}")
+            
             # Encode back to base64
             linear_b64 = base64.b64encode(linear_data).decode('utf-8')
             
+            # Log conversion success occasionally
+            if not hasattr(self, '_conversion_count'):
+                self._conversion_count = 0
+            self._conversion_count += 1
+            
+            if self._conversion_count % 100 == 1:  # Log first and every 100th
+                logger.info(f"🔄 Audio conversion #{self._conversion_count}: {len(mulaw_data)} µ-law → {len(linear_data)} linear16")
+            
             return linear_b64
+            
         except Exception as e:
             logger.error(f"❌ Audio conversion error: {e}")
-            return mulaw_b64  # Return original if conversion fails
+            logger.error(f"   Input length: {len(mulaw_b64) if mulaw_b64 else 0}")
+            return ""  # Return empty instead of original to prevent bad data
     
     def convert_linear16_to_mulaw(self, linear_b64: str) -> str:
         """Convert linear16 PCM from HumeAI to µ-law for Twilio"""
@@ -226,6 +248,13 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.info(f"   🎛️ Audio: 8kHz linear16, 20ms chunks, VAD enabled")
             logger.info(f"   🎙️ Turn detection: Server VAD with 500ms silence threshold")
             
+            # Send session start message
+            start_message = {
+                "type": "session_start"
+            }
+            await self.hume_ws.send(json.dumps(start_message))
+            logger.info(f"🎬 Sent session start message to HumeAI")
+            
             # Start listening to HumeAI responses
             asyncio.create_task(self.listen_to_hume())
             
@@ -258,37 +287,55 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             payload = media.get('payload')  # Base64 µ-law audio
             
             if not payload:
+                logger.warning(f"⚠️ Empty payload received from Twilio")
                 return
             
-            # Log first audio chunk
+            # Log first audio chunk with detailed info
             if not hasattr(self, '_first_audio_logged'):
-                logger.info(f"🎤 Receiving audio from Twilio (µ-law payload length: {len(payload)})")
+                logger.info(f"🎤 First audio from Twilio:")
+                logger.info(f"   📏 Payload length: {len(payload)} chars")
+                logger.info(f"   🔧 Sample rate: 8kHz µ-law")
+                logger.info(f"   📡 Stream: {self.stream_sid}")
                 self._first_audio_logged = True
             
             # Convert µ-law to linear16 PCM for HumeAI
             linear_payload = self.convert_mulaw_to_linear16(payload)
             
-            # Send converted audio to HumeAI
+            if not linear_payload:
+                logger.error(f"❌ Audio conversion failed")
+                return
+            
+            # Send converted audio to HumeAI with enhanced message
             hume_message = {
                 "type": "audio_input",
                 "data": linear_payload
             }
             
+            # Check HumeAI connection before sending
+            if self.hume_ws.closed:
+                logger.error(f"❌ HumeAI connection closed, cannot send audio")
+                self.hume_connected = False
+                return
+            
             await self.hume_ws.send(json.dumps(hume_message))
             
-            # Log occasionally
+            # Enhanced logging
             if not hasattr(self, '_audio_count'):
                 self._audio_count = 0
             self._audio_count += 1
             
-            if self._audio_count % 50 == 0:
+            # Log every 25 chunks and show conversion details
+            if self._audio_count % 25 == 0:
                 logger.info(f"📡 Sent {self._audio_count} audio chunks to HumeAI")
+                logger.info(f"   🔄 Last conversion: {len(payload)} → {len(linear_payload)} chars")
                 
         except websockets.exceptions.ConnectionClosed as e:
             logger.error(f"❌ HumeAI connection closed: {e.code} - {e.reason}")
             self.hume_connected = False
         except Exception as e:
             logger.error(f"❌ Handle media error: {str(e)}")
+            import traceback
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
 
     async def handle_stop(self, data):
         """Handle stream stop"""
@@ -399,9 +446,12 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             
             logger.info(f"🔪 Split {len(mulaw_bytes)} bytes into {len(chunks)} chunks of ~{CHUNK_SIZE} bytes")
             
-            # Send chunks with proper timing
+            # Send chunks with proper timing and connection monitoring
             for i, chunk in enumerate(chunks):
-                await self.send_audio_chunk_to_twilio(chunk, i)
+                success = await self.send_audio_chunk_to_twilio(chunk, i)
+                if not success:
+                    logger.warning(f"⚠️ Stopped sending audio at chunk {i} due to connection issue")
+                    break
                 
                 # Small delay between chunks to prevent overwhelming Twilio
                 await asyncio.sleep(0.02)  # 20ms delay matches chunk duration
@@ -414,6 +464,11 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
     async def send_audio_chunk_to_twilio(self, chunk_payload: str, sequence: int):
         """Send individual audio chunk to Twilio with sequence tracking"""
         try:
+            # Check if WebSocket is still connected
+            if self.websocket.connection.state != 1:  # 1 = OPEN
+                logger.warning(f"⚠️ WebSocket disconnected, stopping audio transmission")
+                return False
+            
             message = {
                 "event": "media",
                 "streamSid": self.stream_sid,
@@ -428,9 +483,12 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             # Log every 10th chunk to avoid spam
             if sequence % 10 == 0:
                 logger.info(f"📤 Sent chunk {sequence}: {len(chunk_payload)} chars")
+            
+            return True
                 
         except Exception as e:
             logger.error(f"❌ Send chunk {sequence} error: {str(e)}")
+            return False
     
     async def send_to_twilio(self, audio_base64: str):
         """Send audio from HumeAI back to Twilio"""
