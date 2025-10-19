@@ -51,7 +51,7 @@ def twilio_voice_webhook(request):
     # Start media stream to HumeAI
     start = Start()
     stream = Stream(
-        url=f'wss://{request.get_host()}/api/hume-twilio/stream/{call_sid}',
+        url=f'wss://{request.get_host()}/ws/hume-twilio/stream/{call_sid}',
         track='both_tracks'  # Capture both caller and agent audio
     )
     start.append(stream)
