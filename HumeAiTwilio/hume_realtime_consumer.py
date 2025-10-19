@@ -383,27 +383,24 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.error(f"❌ Send RAW audio to Twilio error: {str(e)}")
     
     async def send_tts_to_twilio(self, text: str):
-        """Send text to Twilio for TTS playback"""
+        """Send text to Twilio for TTS playback using redirect"""
         try:
             # Get TTS settings from environment or use defaults
             from decouple import config
             
             tts_voice = config('TWILIO_TTS_VOICE', default='Polly.Joanna')
-            tts_language = config('TWILIO_TTS_LANGUAGE', default='en-US')
             
-            # Send say command for TTS
-            tts_message = {
-                "event": "say",
+            # Instead of WebSocket say event, use redirect to TwiML endpoint
+            redirect_message = {
+                "event": "redirect",
                 "streamSid": self.stream_sid,
-                "say": {
-                    "text": text,
-                    "voice": tts_voice,
-                    "language": tts_language
+                "redirect": {
+                    "url": f"https://uncontortioned-na-ponderously.ngrok-free.dev/api/hume-twilio/tts-response/?text={text[:200]}&voice={tts_voice}"
                 }
             }
             
-            await self.send(text_data=json.dumps(tts_message))
-            logger.info(f"🔊 Sent TTS to Twilio [{tts_voice}]: '{text[:50]}...'")
+            await self.send(text_data=json.dumps(redirect_message))
+            logger.info(f"� Sent TTS redirect to Twilio [{tts_voice}]: '{text[:50]}...'")
             
         except Exception as e:
             logger.error(f"❌ Send TTS to Twilio error: {str(e)}")
