@@ -42,13 +42,8 @@ def twilio_voice_webhook(request):
     # Create TwiML response
     response = VoiceResponse()
     
-    # Greeting message
-    response.say(
-        "Hello! You are now connected to our AI agent. Please wait while we connect you.",
-        voice='Polly.Joanna'
-    )
-    
-    # Start media stream to HumeAI
+    # No hardcoded greeting - let HumeAI agent speak directly
+    # Start media stream to HumeAI immediately
     start = Start()
     stream = Stream(
         url=f'wss://{request.get_host()}/ws/hume-twilio/stream/{call_sid}',
