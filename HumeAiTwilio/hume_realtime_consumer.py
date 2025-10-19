@@ -176,6 +176,7 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
         """Forward audio from Twilio to HumeAI"""
         try:
             if not self.hume_connected or not self.hume_ws:
+                logger.warning(f"⚠️ Media received but HumeAI not connected")
                 return
             
             # Extract audio payload from Twilio
@@ -185,17 +186,30 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             if not payload:
                 return
             
-            # Send audio to HumeAI
-            # HumeAI expects specific format - check their docs
+            # Log first audio chunk
+            if not hasattr(self, '_first_audio_logged'):
+                logger.info(f"🎤 Receiving audio from Twilio (payload length: {len(payload)})")
+                self._first_audio_logged = True
+            
+            # Send audio to HumeAI in correct format
             hume_message = {
                 "type": "audio_input",
-                "data": payload  # May need format conversion
+                "data": payload
             }
             
             await self.hume_ws.send(json.dumps(hume_message))
             
+            # Log occasionally
+            if not hasattr(self, '_audio_count'):
+                self._audio_count = 0
+            self._audio_count += 1
+            if self._audio_count % 50 == 0:  # Every 50 chunks
+                logger.info(f"📡 Sent {self._audio_count} audio chunks to HumeAI")
+            
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.error(f"❌ HumeAI connection closed: {e.code} - {e.reason}")
         except Exception as e:
-            logger.error(f"❌ Handle media error: {str(e)}")
+            logger.error(f"❌ Handle media error: {type(e).__name__}: {str(e)}")
     
     async def handle_stop(self, data):
         """Handle stream stop"""
@@ -212,15 +226,18 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
     async def listen_to_hume(self):
         """Listen for responses from HumeAI and forward to Twilio"""
         try:
+            logger.info(f"👂 Started listening to HumeAI responses...")
             async for message in self.hume_ws:
                 data = json.loads(message)
                 
                 # Check message type
                 msg_type = data.get('type')
+                logger.info(f"📨 Received from HumeAI: {msg_type}")
                 
                 if msg_type == 'audio_output':
                     # Get audio from HumeAI
                     audio_data = data.get('data')  # Base64 audio
+                    logger.info(f"🔊 Received audio from HumeAI ({len(audio_data) if audio_data else 0} bytes)")
                     
                     # Send to Twilio
                     await self.send_to_twilio(audio_data)
@@ -228,16 +245,17 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                 elif msg_type == 'user_message':
                     # Log transcription
                     transcript = data.get('text')
-                    logger.info(f"👤 User: {transcript}")
+                    logger.info(f"👤 User said: {transcript}")
                 
                 elif msg_type == 'assistant_message':
                     # Log AI response
                     response = data.get('text')
-                    logger.info(f"🤖 Assistant: {response}")
+                    logger.info(f"🤖 AI responds: {response}")
                 
                 elif msg_type == 'emotion_scores':
                     # Log emotions
                     emotions = data.get('emotions', {})
+                    logger.info(f"😊 Emotions: {emotions}")
                     logger.info(f"😊 Emotions: {emotions}")
                 
         except Exception as e:
