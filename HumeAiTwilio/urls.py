@@ -22,7 +22,6 @@ from .twilio_voice_bridge import (
     twilio_voice_webhook,
     twilio_status_callback,
 )
-from .tts_endpoint import tts_response  # Add TTS endpoint
 
 # NEW: Import Simple Voice (NO WebSocket - FREE version)
 from .twilio_simple_voice import (
@@ -52,7 +51,6 @@ urlpatterns = [
     # NEW: Twilio Voice Bridge endpoints (WebSocket - requires paid plan)
     path('voice-webhook/', twilio_voice_webhook, name='twilio-voice-webhook'),
     path('status-callback/', twilio_status_callback, name='twilio-status-callback'),
-    path('tts-response/', tts_response, name='tts-response'),  # Add TTS endpoint
     
     # NEW: Simple Voice endpoints (NO WebSocket - FREE PythonAnywhere)
     path('voice-webhook-simple/', twilio_voice_webhook_simple, name='voice-webhook-simple'),
