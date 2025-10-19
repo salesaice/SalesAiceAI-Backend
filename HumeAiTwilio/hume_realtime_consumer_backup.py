@@ -288,14 +288,8 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                     audio_data = data.get('data')  # Base64 audio
                     logger.info(f"🔊 Received audio from HumeAI ({len(audio_data) if audio_data else 0} bytes)")
                     
-                    # Send to Twilio (with conversion)
+                    # Send to Twilio
                     await self.send_to_twilio(audio_data)
-                    
-                    # ALSO try sending raw audio without conversion (for testing)
-                    if not hasattr(self, '_raw_test_sent'):
-                        self._raw_test_sent = True
-                        await self.send_raw_audio_to_twilio(audio_data)
-                        logger.info(f"🧪 Sent RAW audio test to Twilio")
                 
                 elif msg_type == 'user_message':
                     # Log transcription
@@ -333,17 +327,6 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             # Convert linear16 PCM from HumeAI to µ-law for Twilio
             mulaw_payload = self.convert_linear16_to_mulaw(audio_base64)
             
-            # Log detailed audio info
-            if not hasattr(self, '_audio_sent_count'):
-                self._audio_sent_count = 0
-            self._audio_sent_count += 1
-            
-            if self._audio_sent_count <= 3:  # Log first 3 audio sends
-                logger.info(f"📤 Sending audio #{self._audio_sent_count}:")
-                logger.info(f"   Original size: {len(audio_base64)} chars")
-                logger.info(f"   Converted size: {len(mulaw_payload)} chars")
-                logger.info(f"   Stream SID: {self.stream_sid}")
-            
             message = {
                 "event": "media",
                 "streamSid": self.stream_sid,
@@ -353,28 +336,7 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             }
             
             await self.send(text_data=json.dumps(message))
-            
-            if self._audio_sent_count <= 3:
-                logger.info(f"✅ Audio #{self._audio_sent_count} sent to Twilio successfully")
-            elif self._audio_sent_count % 10 == 0:
-                logger.info(f"📤 Sent {self._audio_sent_count} audio chunks to Twilio")
+            logger.info(f"📤 Sent audio to Twilio (converted to µ-law)")
             
         except Exception as e:
             logger.error(f"❌ Send to Twilio error: {str(e)}")
-    
-    async def send_raw_audio_to_twilio(self, audio_base64: str):
-        """Send raw audio from HumeAI to Twilio (no conversion) - for testing"""
-        try:
-            message = {
-                "event": "media",
-                "streamSid": self.stream_sid,
-                "media": {
-                    "payload": audio_base64  # Send raw without conversion
-                }
-            }
-            
-            await self.send(text_data=json.dumps(message))
-            logger.info(f"🧪 Sent RAW audio to Twilio (no conversion)")
-            
-        except Exception as e:
-            logger.error(f"❌ Send RAW audio to Twilio error: {str(e)}")
