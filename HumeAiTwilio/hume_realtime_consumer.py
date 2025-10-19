@@ -448,9 +448,9 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
     async def send_audio_chunk_to_twilio(self, chunk_payload: str, sequence: int):
         """Send individual audio chunk to Twilio with sequence tracking"""
         try:
-            # Check if WebSocket is still connected
-            if self.websocket.connection.state != 1:  # 1 = OPEN
-                logger.warning(f"⚠️ WebSocket disconnected, stopping audio transmission")
+            # Check if we have a valid stream ID (indicates connection is active)
+            if not self.stream_sid:
+                logger.warning(f"⚠️ No stream ID available, stopping audio transmission")
                 return False
             
             message = {
