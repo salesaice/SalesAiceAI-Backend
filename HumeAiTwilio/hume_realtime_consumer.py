@@ -39,6 +39,24 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.error(f"❌ Audio conversion error: {e}")
             return mulaw_b64  # Return original if conversion fails
     
+    def convert_linear16_to_mulaw(self, linear_b64: str) -> str:
+        """Convert linear16 PCM from HumeAI to µ-law for Twilio"""
+        try:
+            # Decode base64 linear16 audio
+            linear_data = base64.b64decode(linear_b64)
+            
+            # Convert linear16 PCM to µ-law
+            # audioop.lin2ulaw converts linear PCM to µ-law
+            mulaw_data = audioop.lin2ulaw(linear_data, 2)  # 2 bytes per sample (16-bit)
+            
+            # Encode back to base64
+            mulaw_b64 = base64.b64encode(mulaw_data).decode('utf-8')
+            
+            return mulaw_b64
+        except Exception as e:
+            logger.error(f"❌ Audio conversion error: {e}")
+            return linear_b64  # Return original if conversion fails
+    
     async def connect(self):
         """Initialize WebSocket connection"""
         try:
@@ -302,15 +320,19 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
     async def send_to_twilio(self, audio_base64: str):
         """Send audio from HumeAI back to Twilio"""
         try:
+            # Convert linear16 PCM from HumeAI to µ-law for Twilio
+            mulaw_payload = self.convert_linear16_to_mulaw(audio_base64)
+            
             message = {
                 "event": "media",
                 "streamSid": self.stream_sid,
                 "media": {
-                    "payload": audio_base64
+                    "payload": mulaw_payload
                 }
             }
             
             await self.send(text_data=json.dumps(message))
+            logger.info(f"📤 Sent audio to Twilio (converted to µ-law)")
             
         except Exception as e:
             logger.error(f"❌ Send to Twilio error: {str(e)}")
