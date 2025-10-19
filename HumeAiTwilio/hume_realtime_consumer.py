@@ -82,9 +82,9 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             from .models import TwilioCall, HumeAgent
             from decouple import config
             
-            # Get credentials from environment
-            hume_api_key = config('HUME_API_KEY')
-            hume_secret_key = config('HUME_SECRET_KEY')
+            # Get credentials from environment - Support both variable names
+            hume_api_key = config('HUME_AI_API_KEY', default=config('HUME_API_KEY', default=''))
+            hume_secret_key = config('HUME_AI_SECRET_KEY', default=config('HUME_SECRET_KEY', default=''))
             config_id = config('HUME_CONFIG_ID')  # Hardcoded from .env for now
             
             logger.info(f"🔧 Using HumeAI Config ID: {config_id}")
