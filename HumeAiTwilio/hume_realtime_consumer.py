@@ -77,33 +77,32 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             
             logger.info(f"📞 Stream started: {self.stream_sid}")
             
-            # Get HumeAI config from database
+            # Get HumeAI config - TEMPORARY: Hardcode for testing
             from channels.db import database_sync_to_async
             from .models import TwilioCall, HumeAgent
             from decouple import config
             
+            # Get credentials from environment
+            hume_api_key = config('HUME_API_KEY')
+            hume_secret_key = config('HUME_SECRET_KEY')
+            config_id = config('HUME_CONFIG_ID')  # Hardcoded from .env for now
+            
+            logger.info(f"🔧 Using HumeAI Config ID: {config_id}")
+            
+            # Try to get agent from database (for logging only)
             @database_sync_to_async
             def get_active_agent():
-                """Get active agent - don't depend on TwilioCall being created yet"""
-                # First try to get from TwilioCall if it exists
-                call = TwilioCall.objects.filter(call_sid=call_sid).select_related('agent').first()
-                if call and call.agent:
-                    return call.agent
-                
-                # Otherwise get any active agent
                 agent = HumeAgent.objects.filter(status='active').first()
                 return agent
             
             agent = await get_active_agent()
-            
-            if not agent:
-                logger.error(f"❌ No active agent found for call: {call_sid}")
-                return
+            if agent:
+                logger.info(f"✅ Found agent in DB: {agent.name} (ID: {agent.hume_config_id})")
+            else:
+                logger.warning(f"⚠️  No agent in DB, using config from .env")
             
             # Connect to HumeAI EVI WebSocket
-            hume_api_key = config('HUME_API_KEY')
-            hume_secret_key = config('HUME_SECRET_KEY')
-            config_id = agent.hume_config_id
+            # Use config_id from environment (already set above)
             
             # HumeAI EVI WebSocket URL
             hume_url = f"wss://api.hume.ai/v0/evi/chat"
@@ -113,6 +112,8 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                 "X-Hume-Secret-Key": hume_secret_key,
                 "X-Hume-Config-Id": config_id
             }
+            
+            logger.info(f"🔌 Connecting to HumeAI EVI...")
             
             # Connect to HumeAI
             self.hume_ws = await websockets.connect(hume_url, extra_headers=headers)
@@ -125,6 +126,8 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             
         except Exception as e:
             logger.error(f"❌ Handle start error: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     async def handle_media(self, data):
         """Forward audio from Twilio to HumeAI"""
