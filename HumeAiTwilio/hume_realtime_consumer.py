@@ -28,11 +28,13 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             mulaw_data = base64.b64decode(mulaw_b64)
             
             # Convert µ-law to linear16 PCM
-            # audioop.ulaw2lin converts µ-law to linear PCM (16-bit)
             linear_data = audioop.ulaw2lin(mulaw_data, 2)  # 2 bytes per sample (16-bit)
             
+            # Twilio sends 8kHz, but HumeAI expects 16kHz - upsample
+            linear_16khz = audioop.ratecv(linear_data, 2, 1, 8000, 16000, None)[0]
+            
             # Encode back to base64
-            linear_b64 = base64.b64encode(linear_data).decode('utf-8')
+            linear_b64 = base64.b64encode(linear_16khz).decode('utf-8')
             
             return linear_b64
         except Exception as e:
@@ -45,9 +47,11 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             # Decode base64 linear16 audio
             linear_data = base64.b64decode(linear_b64)
             
+            # HumeAI sends 16kHz, but Twilio expects 8kHz - downsample
+            linear_8khz = audioop.ratecv(linear_data, 2, 1, 16000, 8000, None)[0]
+            
             # Convert linear16 PCM to µ-law
-            # audioop.lin2ulaw converts linear PCM to µ-law
-            mulaw_data = audioop.lin2ulaw(linear_data, 2)  # 2 bytes per sample (16-bit)
+            mulaw_data = audioop.lin2ulaw(linear_8khz, 2)  # 2 bytes per sample (16-bit)
             
             # Encode back to base64
             mulaw_b64 = base64.b64encode(mulaw_data).decode('utf-8')
@@ -189,11 +193,11 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                 "audio": {
                     "encoding": "linear16",
                     "channels": 1,
-                    "sample_rate": 8000  # Twilio µ-law sample rate
+                    "sample_rate": 16000  # Try 16kHz instead of 8kHz
                 }
             }
             await self.hume_ws.send(json.dumps(session_config))
-            logger.info(f"📤 Sent session config to HumeAI with audio settings")
+            logger.info(f"📤 Sent session config to HumeAI with 16kHz audio settings")
             
             # Start listening to HumeAI responses
             asyncio.create_task(self.listen_to_hume())
