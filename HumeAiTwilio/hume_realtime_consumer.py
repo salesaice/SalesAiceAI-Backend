@@ -114,11 +114,45 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.info(f"✅ Twilio WebSocket connected for call: {self.call_sid}")
             logger.info(f"📞 Stream started: {self.stream_sid}")
             
+            # Send initial configuration to Twilio for optimal audio
+            await self.configure_twilio_stream()
+            
             # Connect to HumeAI
             await self.connect_to_hume()
             
         except Exception as e:
             logger.error(f"❌ Handle start error: {str(e)}")
+    
+    async def configure_twilio_stream(self):
+        """Configure Twilio stream for optimal audio delivery"""
+        try:
+            logger.info(f"🔧 Configuring Twilio stream for audio delivery...")
+            
+            # Send stream configuration to Twilio
+            # This tells Twilio we're ready to send audio back
+            config_message = {
+                "event": "start",
+                "streamSid": self.stream_sid,
+                "start": {
+                    "accountSid": None,  # Twilio will fill this
+                    "streamSid": self.stream_sid,
+                    "callSid": self.call_sid,
+                    "tracks": ["outbound"],  # We want to send audio to caller
+                    "mediaFormat": {
+                        "encoding": "mulaw",
+                        "sampleRate": 8000,
+                        "channels": 1
+                    }
+                }
+            }
+            
+            # Note: We don't actually send this config message as Twilio manages it
+            # But we log the configuration for debugging
+            logger.info(f"📋 Stream config: µ-law, 8kHz, mono, outbound track")
+            logger.info(f"📋 Ready to send media to stream: {self.stream_sid}")
+            
+        except Exception as e:
+            logger.error(f"❌ Configure Twilio stream error: {str(e)}")
 
     async def connect_to_hume(self):
         """Establish connection to HumeAI EVI"""
@@ -166,18 +200,31 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.info(f"✅ HumeAI WebSocket connected successfully!")
             logger.info(f"✅ Ready for call: {self.call_sid}")
             
-            # Send initial session configuration to HumeAI with audio settings
+            # Send initial session configuration to HumeAI with optimized audio settings
             session_config = {
                 "type": "session_settings",
                 "config_id": config_id,
                 "audio": {
                     "encoding": "linear16",
                     "channels": 1,
-                    "sample_rate": 8000  # Twilio µ-law sample rate
+                    "sample_rate": 8000,  # Twilio µ-law sample rate
+                    "enable_vad": True,   # Voice Activity Detection
+                    "chunk_length_ms": 20  # 20ms chunks for real-time playback
+                },
+                "language": {
+                    "model": "auto"  # Auto-detect language
+                },
+                "turn_detection": {
+                    "type": "server_vad",  # Server-side voice activity detection
+                    "threshold": 0.5,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 500
                 }
             }
             await self.hume_ws.send(json.dumps(session_config))
-            logger.info(f"📤 Sent session config to HumeAI with audio settings")
+            logger.info(f"📤 Sent optimized session config to HumeAI")
+            logger.info(f"   🎛️ Audio: 8kHz linear16, 20ms chunks, VAD enabled")
+            logger.info(f"   🎙️ Turn detection: Server VAD with 500ms silence threshold")
             
             # Start listening to HumeAI responses
             asyncio.create_task(self.listen_to_hume())
@@ -259,6 +306,8 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
         """Listen for responses from HumeAI and forward to Twilio"""
         try:
             logger.info(f"👂 Started listening to HumeAI responses...")
+            self.audio_sequence = 0  # Track audio sequence for Twilio
+            
             async for message in self.hume_ws:
                 data = json.loads(message)
                 
@@ -269,15 +318,36 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                 if msg_type == 'audio_output':
                     # Get audio from HumeAI
                     audio_data = data.get('data')  # Base64 audio
-                    logger.info(f"🔊 Received audio from HumeAI ({len(audio_data) if audio_data else 0} bytes)")
-                    
-                    # Send to Twilio
-                    await self.send_to_twilio(audio_data)
+                    if audio_data:
+                        logger.info(f"🔊 Received audio from HumeAI ({len(audio_data)} bytes)")
+                        
+                        # Send to Twilio with proper chunking
+                        await self.send_audio_chunks_to_twilio(audio_data)
+                    else:
+                        logger.warning(f"⚠️ Empty audio_output received")
                 
                 elif msg_type == 'user_message':
                     # Log transcription
                     transcript = data.get('text')
                     logger.info(f"👤 User said: {transcript}")
+                
+                elif msg_type == 'assistant_message':
+                    # Log AI response text
+                    response = data.get('content')
+                    if response:
+                        logger.info(f"🤖 AI responds: {response}")
+                
+                elif msg_type == 'assistant_prosody':
+                    # Handle prosody information (voice characteristics)
+                    logger.info(f"🎭 AI prosody data received")
+                
+                elif msg_type == 'assistant_end':
+                    # Handle end of assistant response
+                    logger.info(f"✅ AI response completed")
+                
+                elif msg_type == 'user_interruption':
+                    # Handle user interrupting AI
+                    logger.info(f"⏸️ User interrupted AI")
                 
                 elif msg_type == 'assistant_message':
                     # Log AI response
@@ -303,6 +373,64 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                 
         except Exception as e:
             logger.error(f"❌ Listen to HumeAI error: {str(e)}")
+    
+    async def send_audio_chunks_to_twilio(self, audio_base64: str):
+        """Break large audio into smaller chunks for better Twilio delivery"""
+        try:
+            if not audio_base64:
+                logger.warning(f"⚠️ Empty audio data received from HumeAI")
+                return
+            
+            # Convert linear16 PCM from HumeAI to µ-law for Twilio
+            mulaw_payload = self.convert_linear16_to_mulaw(audio_base64)
+            
+            # Calculate chunk size (Twilio prefers smaller chunks for real-time playback)
+            # Each chunk should be ~160 bytes for 8kHz µ-law (20ms of audio)
+            CHUNK_SIZE = 160  # 20ms chunks at 8kHz µ-law
+            
+            # Split payload into chunks
+            chunks = []
+            mulaw_bytes = base64.b64decode(mulaw_payload)
+            
+            for i in range(0, len(mulaw_bytes), CHUNK_SIZE):
+                chunk = mulaw_bytes[i:i + CHUNK_SIZE]
+                chunk_b64 = base64.b64encode(chunk).decode('utf-8')
+                chunks.append(chunk_b64)
+            
+            logger.info(f"🔪 Split {len(mulaw_bytes)} bytes into {len(chunks)} chunks of ~{CHUNK_SIZE} bytes")
+            
+            # Send chunks with proper timing
+            for i, chunk in enumerate(chunks):
+                await self.send_audio_chunk_to_twilio(chunk, i)
+                
+                # Small delay between chunks to prevent overwhelming Twilio
+                await asyncio.sleep(0.02)  # 20ms delay matches chunk duration
+                
+        except Exception as e:
+            logger.error(f"❌ Send audio chunks error: {str(e)}")
+            import traceback
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
+    
+    async def send_audio_chunk_to_twilio(self, chunk_payload: str, sequence: int):
+        """Send individual audio chunk to Twilio with sequence tracking"""
+        try:
+            message = {
+                "event": "media",
+                "streamSid": self.stream_sid,
+                "media": {
+                    "payload": chunk_payload
+                }
+            }
+            
+            message_json = json.dumps(message)
+            await self.send(text_data=message_json)
+            
+            # Log every 10th chunk to avoid spam
+            if sequence % 10 == 0:
+                logger.info(f"📤 Sent chunk {sequence}: {len(chunk_payload)} chars")
+                
+        except Exception as e:
+            logger.error(f"❌ Send chunk {sequence} error: {str(e)}")
     
     async def send_to_twilio(self, audio_base64: str):
         """Send audio from HumeAI back to Twilio"""
