@@ -256,7 +256,18 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                     # Log emotions
                     emotions = data.get('emotions', {})
                     logger.info(f"😊 Emotions: {emotions}")
-                    logger.info(f"😊 Emotions: {emotions}")
+                
+                elif msg_type == 'error':
+                    # Log HumeAI error details
+                    error_msg = data.get('message', 'Unknown error')
+                    error_code = data.get('code', 'N/A')
+                    logger.error(f"❌ HumeAI Error [{error_code}]: {error_msg}")
+                    logger.error(f"   Full error data: {data}")
+                
+                else:
+                    # Log unknown message types
+                    logger.warning(f"⚠️ Unknown HumeAI message type: {msg_type}")
+                    logger.debug(f"   Message data: {data}")
                 
         except Exception as e:
             logger.error(f"❌ Listen to HumeAI error: {str(e)}")
