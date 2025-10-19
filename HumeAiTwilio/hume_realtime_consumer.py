@@ -47,19 +47,24 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             # Decode base64 linear16 audio
             linear_data = base64.b64decode(linear_b64)
             
-            # HumeAI sends 16kHz, but Twilio expects 8kHz - downsample
-            linear_8khz = audioop.ratecv(linear_data, 2, 1, 16000, 8000, None)[0]
+            # Log original data info
+            logger.info(f"🔄 Converting audio: {len(linear_data)} bytes of linear16 data")
             
-            # Convert linear16 PCM to µ-law
-            mulaw_data = audioop.lin2ulaw(linear_8khz, 2)  # 2 bytes per sample (16-bit)
+            # HumeAI might send different sample rate - try without conversion first
+            # Then convert to µ-law directly
+            mulaw_data = audioop.lin2ulaw(linear_data, 2)  # 2 bytes per sample (16-bit)
             
             # Encode back to base64
             mulaw_b64 = base64.b64encode(mulaw_data).decode('utf-8')
             
+            logger.info(f"✅ Converted to µ-law: {len(mulaw_data)} bytes")
             return mulaw_b64
+            
         except Exception as e:
             logger.error(f"❌ Audio conversion error: {e}")
-            return linear_b64  # Return original if conversion fails
+            # Try returning original data as fallback
+            logger.warning(f"⚠️ Returning original audio data as fallback")
+            return linear_b64
     
     async def connect(self):
         """Initialize WebSocket connection"""
@@ -284,18 +289,11 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                 logger.info(f"📨 Received from HumeAI: {msg_type}")
                 
                 if msg_type == 'audio_output':
-                    # Get audio from HumeAI
-                    audio_data = data.get('data')  # Base64 audio
-                    logger.info(f"🔊 Received audio from HumeAI ({len(audio_data) if audio_data else 0} bytes)")
-                    
-                    # Send to Twilio (with conversion)
-                    await self.send_to_twilio(audio_data)
-                    
-                    # ALSO try sending raw audio without conversion (for testing)
-                    if not hasattr(self, '_raw_test_sent'):
-                        self._raw_test_sent = True
-                        await self.send_raw_audio_to_twilio(audio_data)
-                        logger.info(f"🧪 Sent RAW audio test to Twilio")
+                    # Skip audio output - using TTS instead
+                    audio_data = data.get('data')
+                    logger.info(f"🔊 Received audio from HumeAI ({len(audio_data) if audio_data else 0} bytes) - SKIPPING (using TTS)")
+                    # Comment out audio sending
+                    # await self.send_to_twilio(audio_data)
                 
                 elif msg_type == 'user_message':
                     # Log transcription
@@ -303,9 +301,14 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                     logger.info(f"👤 User said: {transcript}")
                 
                 elif msg_type == 'assistant_message':
-                    # Log AI response
-                    response = data.get('text')
-                    logger.info(f"🤖 AI responds: {response}")
+                    # Log AI response and send as TTS
+                    response = data.get('message', {}).get('content', '')
+                    if response:
+                        logger.info(f"🤖 AI responds: {response}")
+                        # Send text to Twilio for TTS instead of audio
+                        await self.send_tts_to_twilio(response)
+                    else:
+                        logger.warning(f"⚠️ Empty AI response received")
                 
                 elif msg_type == 'emotion_scores':
                     # Log emotions
@@ -378,3 +381,29 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             
         except Exception as e:
             logger.error(f"❌ Send RAW audio to Twilio error: {str(e)}")
+    
+    async def send_tts_to_twilio(self, text: str):
+        """Send text to Twilio for TTS playback"""
+        try:
+            # Get TTS settings from environment or use defaults
+            from decouple import config
+            
+            tts_voice = config('TWILIO_TTS_VOICE', default='Polly.Joanna')
+            tts_language = config('TWILIO_TTS_LANGUAGE', default='en-US')
+            
+            # Send say command for TTS
+            tts_message = {
+                "event": "say",
+                "streamSid": self.stream_sid,
+                "say": {
+                    "text": text,
+                    "voice": tts_voice,
+                    "language": tts_language
+                }
+            }
+            
+            await self.send(text_data=json.dumps(tts_message))
+            logger.info(f"🔊 Sent TTS to Twilio [{tts_voice}]: '{text[:50]}...'")
+            
+        except Exception as e:
+            logger.error(f"❌ Send TTS to Twilio error: {str(e)}")
