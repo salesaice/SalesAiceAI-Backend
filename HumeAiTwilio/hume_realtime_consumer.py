@@ -222,25 +222,14 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.info(f"✅ HumeAI WebSocket connected successfully!")
             logger.info(f"✅ Ready for call: {self.call_sid}")
             
-            # Send initial session configuration to HumeAI with optimized audio settings
+            # Send initial session configuration to HumeAI (simplified and working)
             session_config = {
                 "type": "session_settings",
                 "config_id": config_id,
                 "audio": {
                     "encoding": "linear16",
                     "channels": 1,
-                    "sample_rate": 8000,  # Twilio µ-law sample rate
-                    "enable_vad": True,   # Voice Activity Detection
-                    "chunk_length_ms": 20  # 20ms chunks for real-time playback
-                },
-                "language": {
-                    "model": "auto"  # Auto-detect language
-                },
-                "turn_detection": {
-                    "type": "server_vad",  # Server-side voice activity detection
-                    "threshold": 0.5,
-                    "prefix_padding_ms": 300,
-                    "silence_duration_ms": 500
+                    "sample_rate": 8000  # Twilio µ-law sample rate
                 }
             }
             await self.hume_ws.send(json.dumps(session_config))
@@ -248,15 +237,10 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.info(f"   🎛️ Audio: 8kHz linear16, 20ms chunks, VAD enabled")
             logger.info(f"   🎙️ Turn detection: Server VAD with 500ms silence threshold")
             
-            # Send session start message
-            start_message = {
-                "type": "session_start"
-            }
-            await self.hume_ws.send(json.dumps(start_message))
-            logger.info(f"🎬 Sent session start message to HumeAI")
-            
             # Start listening to HumeAI responses
             asyncio.create_task(self.listen_to_hume())
+            
+            logger.info(f"🎉 HumeAI session ready for audio processing!")
             
         except asyncio.TimeoutError:
             logger.error(f"❌ HumeAI connection timeout after 10 seconds")
