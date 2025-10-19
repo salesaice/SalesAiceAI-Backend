@@ -14,11 +14,11 @@ websocket_urlpatterns = [
     # re_path(r'^ws/hume-twilio/stream/$', consumers.HumeTwilioStreamConsumer.as_asgi()),
     
     # Twilio Voice Stream endpoint (legacy, keeping for compatibility)
-    re_path(r'^api/hume-twilio/stream/(?P<call_sid>[^/]+)$', TwilioHumeStreamConsumer.as_asgi()),
+    re_path(r'^api/hume-twilio/stream/(?P<call_sid>[^/]+)/?$', TwilioHumeStreamConsumer.as_asgi()),
     
     # HumeAI EVI WebSocket endpoint (alternative implementation)
-    re_path(r'^ws/hume-twilio/evi/(?P<call_sid>[^/]+)/$', TwilioHumeEVIConsumer.as_asgi()),
+    re_path(r'^ws/hume-twilio/evi/(?P<call_sid>[^/]+)/?$', TwilioHumeEVIConsumer.as_asgi()),
     
-    # MAIN ROUTE: Full HumeAI real-time integration (PRODUCTION)
-    re_path(r'^ws/hume-twilio/stream/(?P<call_sid>[^/]+)/$', HumeTwilioRealTimeConsumer.as_asgi()),
+    # MAIN ROUTE: Full HumeAI real-time integration (PRODUCTION) - FIXED: Optional trailing slash
+    re_path(r'^ws/hume-twilio/stream/(?P<call_sid>[^/]+)/?$', HumeTwilioRealTimeConsumer.as_asgi()),
 ]
