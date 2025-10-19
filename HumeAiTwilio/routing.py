@@ -1,24 +1,21 @@
 """
 Routing configuration for WebSocket connections
-FIXED: Added ^ prefix to all regex patterns for proper URL matching
+PRODUCTION: Using HumeTwilioRealTimeConsumer for complete HumeAI EVI integration
 """
 
 from django.urls import re_path
-from . import consumers
-from .twilio_consumers import TwilioHumeStreamConsumer
-from .twilio_hume_evi_consumer import TwilioHumeEVIConsumer  # NEW: Real HumeAI EVI
-from .hume_realtime_consumer import HumeTwilioRealTimeConsumer  # LATEST: Full integration
+from .hume_realtime_consumer import HumeTwilioRealTimeConsumer  # MAIN: Full HumeAI EVI integration
 
 websocket_urlpatterns = [
-    # REMOVED: Old placeholder route (was causing conflicts)
-    # re_path(r'^ws/hume-twilio/stream/$', consumers.HumeTwilioStreamConsumer.as_asgi()),
-    
-    # Twilio Voice Stream endpoint (legacy, keeping for compatibility)
-    re_path(r'^api/hume-twilio/stream/(?P<call_sid>[^/]+)/?$', TwilioHumeStreamConsumer.as_asgi()),
-    
-    # HumeAI EVI WebSocket endpoint (alternative implementation)
-    re_path(r'^ws/hume-twilio/evi/(?P<call_sid>[^/]+)/?$', TwilioHumeEVIConsumer.as_asgi()),
-    
-    # MAIN ROUTE: Full HumeAI real-time integration (PRODUCTION) - FIXED: Optional trailing slash
+    # MAIN PRODUCTION ROUTE: Complete HumeAI + Twilio real-time integration
+    # This handles all voice calls with full EVI support
     re_path(r'^ws/hume-twilio/stream/(?P<call_sid>[^/]+)/?$', HumeTwilioRealTimeConsumer.as_asgi()),
+    
+    # Alternative path (same consumer, different URL pattern for compatibility)
+    re_path(r'^api/hume-twilio/stream/(?P<call_sid>[^/]+)/?$', HumeTwilioRealTimeConsumer.as_asgi()),
 ]
+
+# NOTE: Old routes removed to avoid conflicts:
+# - TwilioHumeStreamConsumer (was causing "Handle media error" issues)
+# - TwilioHumeEVIConsumer (incomplete implementation)
+# - consumers.HumeTwilioStreamConsumer (placeholder only)

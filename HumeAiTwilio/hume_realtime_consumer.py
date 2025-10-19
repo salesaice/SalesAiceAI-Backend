@@ -104,28 +104,71 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             # Connect to HumeAI EVI WebSocket
             # Use config_id from environment (already set above)
             
-            # HumeAI EVI WebSocket URL
-            hume_url = f"wss://api.hume.ai/v0/evi/chat"
+            # Validate credentials before connecting
+            if not hume_api_key:
+                logger.error("❌ HUME_API_KEY is empty!")
+                return
+            if not hume_secret_key:
+                logger.error("❌ HUME_SECRET_KEY is empty!")
+                return
+            if not config_id:
+                logger.error("❌ HUME_CONFIG_ID is empty!")
+                return
+            
+            logger.info(f"🔑 API Key: {hume_api_key[:20]}...")
+            logger.info(f"🔑 Secret Key: {hume_secret_key[:20]}...")
+            logger.info(f"🔑 Config ID: {config_id}")
+            
+            # HumeAI EVI WebSocket URL with API key as query parameter
+            hume_url = f"wss://api.hume.ai/v0/evi/chat?api_key={hume_api_key}&config_id={config_id}"
             
             headers = {
                 "X-Hume-Api-Key": hume_api_key,
                 "X-Hume-Secret-Key": hume_secret_key,
-                "X-Hume-Config-Id": config_id
             }
             
             logger.info(f"🔌 Connecting to HumeAI EVI...")
+            logger.info(f"🌐 URL: wss://api.hume.ai/v0/evi/chat?api_key=...&config_id={config_id}")
             
-            # Connect to HumeAI
-            self.hume_ws = await websockets.connect(hume_url, extra_headers=headers)
+            # Connect to HumeAI with timeout
+            self.hume_ws = await asyncio.wait_for(
+                websockets.connect(
+                    hume_url,
+                    extra_headers=headers,
+                    ping_interval=20,
+                    ping_timeout=20
+                ),
+                timeout=10.0
+            )
             self.hume_connected = True
             
-            logger.info(f"✅ HumeAI connected for call: {call_sid}")
+            logger.info(f"✅ HumeAI WebSocket connected successfully!")
+            logger.info(f"✅ Ready for call: {call_sid}")
+            
+            # Send initial session configuration to HumeAI
+            session_config = {
+                "type": "session_settings",
+                "config_id": config_id
+            }
+            await self.hume_ws.send(json.dumps(session_config))
+            logger.info(f"📤 Sent session config to HumeAI")
             
             # Start listening to HumeAI responses
             asyncio.create_task(self.listen_to_hume())
             
+        except asyncio.TimeoutError:
+            logger.error(f"❌ HumeAI connection timeout after 10 seconds")
+            logger.error(f"   Check: 1) Internet connection 2) API credentials 3) HumeAI service status")
+        except websockets.exceptions.InvalidStatusCode as e:
+            logger.error(f"❌ HumeAI rejected connection: HTTP {e.status_code}")
+            if e.status_code == 401:
+                logger.error(f"   → Invalid API Key or Secret Key")
+            elif e.status_code == 403:
+                logger.error(f"   → Access forbidden - check credentials")
+            elif e.status_code == 404:
+                logger.error(f"   → Config ID not found: {config_id}")
         except Exception as e:
-            logger.error(f"❌ Handle start error: {str(e)}")
+            logger.error(f"❌ Handle start error: {type(e).__name__}: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
     
