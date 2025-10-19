@@ -406,7 +406,7 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.error(f"❌ Listen to HumeAI error: {str(e)}")
     
     async def send_audio_chunks_to_twilio(self, audio_base64: str):
-        """Break large audio into smaller chunks for better Twilio delivery"""
+        """Send audio directly to Twilio without chunking delays"""
         try:
             if not audio_base64:
                 logger.warning(f"⚠️ Empty audio data received from HumeAI")
@@ -415,30 +415,21 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             # Convert linear16 PCM from HumeAI to µ-law for Twilio
             mulaw_payload = self.convert_linear16_to_mulaw(audio_base64)
             
-            # Calculate chunk size (Twilio prefers smaller chunks for real-time playback)
-            # Each chunk should be ~160 bytes for 8kHz µ-law (20ms of audio)
-            CHUNK_SIZE = 160  # 20ms chunks at 8kHz µ-law
+            logger.info(f"🚀 Sending audio directly to Twilio: {len(mulaw_payload)} chars")
             
-            # Split payload into chunks
-            chunks = []
-            mulaw_bytes = base64.b64decode(mulaw_payload)
+            # Send entire audio payload at once - let Twilio handle streaming
+            message = {
+                "event": "media",
+                "streamSid": self.stream_sid,
+                "media": {
+                    "payload": mulaw_payload
+                }
+            }
             
-            for i in range(0, len(mulaw_bytes), CHUNK_SIZE):
-                chunk = mulaw_bytes[i:i + CHUNK_SIZE]
-                chunk_b64 = base64.b64encode(chunk).decode('utf-8')
-                chunks.append(chunk_b64)
+            message_json = json.dumps(message)
+            await self.send(text_data=message_json)
             
-            logger.info(f"🔪 Split {len(mulaw_bytes)} bytes into {len(chunks)} chunks of ~{CHUNK_SIZE} bytes")
-            
-            # Send chunks with proper timing and connection monitoring
-            for i, chunk in enumerate(chunks):
-                success = await self.send_audio_chunk_to_twilio(chunk, i)
-                if not success:
-                    logger.warning(f"⚠️ Stopped sending audio at chunk {i} due to connection issue")
-                    break
-                
-                # Small delay between chunks to prevent overwhelming Twilio
-                await asyncio.sleep(0.02)  # 20ms delay matches chunk duration
+            logger.info(f"✅ Audio sent directly to Twilio - no chunking delays!")
                 
         except Exception as e:
             logger.error(f"❌ Send audio chunks error: {str(e)}")
