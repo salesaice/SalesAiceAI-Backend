@@ -79,18 +79,25 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             
             # Get HumeAI config from database
             from channels.db import database_sync_to_async
-            from .models import TwilioCall
+            from .models import TwilioCall, HumeAgent
             from decouple import config
             
             @database_sync_to_async
-            def get_call_and_agent():
+            def get_active_agent():
+                """Get active agent - don't depend on TwilioCall being created yet"""
+                # First try to get from TwilioCall if it exists
                 call = TwilioCall.objects.filter(call_sid=call_sid).select_related('agent').first()
-                return call, call.agent if call else None
+                if call and call.agent:
+                    return call.agent
+                
+                # Otherwise get any active agent
+                agent = HumeAgent.objects.filter(status='active').first()
+                return agent
             
-            call, agent = await get_call_and_agent()
+            agent = await get_active_agent()
             
             if not agent:
-                logger.error(f"❌ No agent found for call: {call_sid}")
+                logger.error(f"❌ No active agent found for call: {call_sid}")
                 return
             
             # Connect to HumeAI EVI WebSocket
