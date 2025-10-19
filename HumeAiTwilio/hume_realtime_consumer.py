@@ -8,6 +8,7 @@ import base64
 import asyncio
 import logging
 import websockets
+import audioop  # For audio format conversion
 from typing import Optional
 from channels.generic.websocket import AsyncWebsocketConsumer
 
@@ -19,6 +20,24 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
     WebSocket consumer that bridges Twilio and HumeAI EVI
     Handles real-time bidirectional audio streaming
     """
+    
+    def convert_mulaw_to_linear16(self, mulaw_b64: str) -> str:
+        """Convert µ-law audio from Twilio to linear16 PCM for HumeAI"""
+        try:
+            # Decode base64 µ-law audio
+            mulaw_data = base64.b64decode(mulaw_b64)
+            
+            # Convert µ-law to linear16 PCM
+            # audioop.ulaw2lin converts µ-law to linear PCM (16-bit)
+            linear_data = audioop.ulaw2lin(mulaw_data, 2)  # 2 bytes per sample (16-bit)
+            
+            # Encode back to base64
+            linear_b64 = base64.b64encode(linear_data).decode('utf-8')
+            
+            return linear_b64
+        except Exception as e:
+            logger.error(f"❌ Audio conversion error: {e}")
+            return mulaw_b64  # Return original if conversion fails
     
     async def connect(self):
         """Initialize WebSocket connection"""
@@ -145,13 +164,18 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.info(f"✅ HumeAI WebSocket connected successfully!")
             logger.info(f"✅ Ready for call: {call_sid}")
             
-            # Send initial session configuration to HumeAI
+            # Send initial session configuration to HumeAI with audio settings
             session_config = {
                 "type": "session_settings",
-                "config_id": config_id
+                "config_id": config_id,
+                "audio": {
+                    "encoding": "linear16",
+                    "channels": 1,
+                    "sample_rate": 8000  # Twilio µ-law sample rate
+                }
             }
             await self.hume_ws.send(json.dumps(session_config))
-            logger.info(f"📤 Sent session config to HumeAI")
+            logger.info(f"📤 Sent session config to HumeAI with audio settings")
             
             # Start listening to HumeAI responses
             asyncio.create_task(self.listen_to_hume())
@@ -188,13 +212,16 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             
             # Log first audio chunk
             if not hasattr(self, '_first_audio_logged'):
-                logger.info(f"🎤 Receiving audio from Twilio (payload length: {len(payload)})")
+                logger.info(f"🎤 Receiving audio from Twilio (µ-law payload length: {len(payload)})")
                 self._first_audio_logged = True
             
-            # Send audio to HumeAI in correct format
+            # Convert µ-law to linear16 PCM for HumeAI
+            linear_payload = self.convert_mulaw_to_linear16(payload)
+            
+            # Send converted audio to HumeAI
             hume_message = {
                 "type": "audio_input",
-                "data": payload
+                "data": linear_payload
             }
             
             await self.hume_ws.send(json.dumps(hume_message))
