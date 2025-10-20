@@ -14,7 +14,13 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
     default='localhost,127.0.0.1,testserver,aicegroup.pythonanywhere.com,salesaice.pythonanywhere.com,salesaice.ai'
-).split(',') + ['testserver', 'aicegroup.pythonanywhere.com']  # Add for testing
+).split(',') + [
+    'testserver', 
+    'aicegroup.pythonanywhere.com',
+    'uncontortioned-na-ponderously.ngrok-free.dev',  # Add ngrok domain
+    '*.ngrok-free.dev',  # Allow any ngrok subdomain
+    '*.ngrok.io'  # Legacy ngrok domains
+]
 CORS_ALLOW_CREDENTIALS = True
 
 # Application definition
@@ -53,6 +59,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
+    'core.ngrok_middleware.NgrokHeaderMiddleware',  # Handle ngrok tunnel headers
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
