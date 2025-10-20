@@ -417,6 +417,17 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             
             logger.info(f"🚀 Sending audio directly to Twilio: {len(mulaw_payload)} chars")
             
+            # Send mark message first to indicate audio start
+            mark_message = {
+                "event": "mark",
+                "streamSid": self.stream_sid,
+                "mark": {
+                    "name": "audio_start"
+                }
+            }
+            await self.send(text_data=json.dumps(mark_message))
+            logger.info(f"📍 Sent mark message: audio_start")
+            
             # Send entire audio payload at once - let Twilio handle streaming
             message = {
                 "event": "media",
@@ -429,7 +440,17 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             message_json = json.dumps(message)
             await self.send(text_data=message_json)
             
-            logger.info(f"✅ Audio sent directly to Twilio - no chunking delays!")
+            # Send mark message after audio to indicate completion
+            mark_end_message = {
+                "event": "mark",
+                "streamSid": self.stream_sid,
+                "mark": {
+                    "name": "audio_end"
+                }
+            }
+            await self.send(text_data=json.dumps(mark_end_message))
+            
+            logger.info(f"✅ Audio sent directly to Twilio with mark messages!")
                 
         except Exception as e:
             logger.error(f"❌ Send audio chunks error: {str(e)}")

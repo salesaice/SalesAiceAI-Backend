@@ -39,23 +39,23 @@ def twilio_voice_webhook(request):
     
     logger.info(f"📞 Incoming call: {from_number} → {to_number} (SID: {call_sid})")
     
-    # Create TwiML response
+    # Create TwiML response with proper bidirectional audio
     response = VoiceResponse()
     
-    # No hardcoded greeting - let HumeAI agent speak directly
-    # Start media stream to HumeAI immediately
+    # Test with both tracks - ensuring we get user input AND send AI output
+    # Start bidirectional media stream to HumeAI
     start = Start()
     stream = Stream(
         url=f'wss://{request.get_host()}/ws/hume-twilio/stream/{call_sid}',
-        track='both_tracks'  # Capture both caller and agent audio
+        track='both_tracks'  # Both directions - user speech + AI responses
     )
     start.append(stream)
     response.append(start)
     
-    # Keep the call alive
-    response.pause(length=60)
+    # Keep the call alive with extended time for conversation
+    response.pause(length=300)  # 5 minutes for full conversation
     
-    logger.info(f"✅ TwiML response generated for call {call_sid}")
+    logger.info(f"✅ TwiML response with BOTH TRACKS stream generated for call {call_sid}")
     
     return HttpResponse(str(response), content_type='text/xml')
 
