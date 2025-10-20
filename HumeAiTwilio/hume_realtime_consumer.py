@@ -204,7 +204,7 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             
             # Connect to HumeAI EVI
             logger.info(f"🔌 Connecting to HumeAI EVI...")
-            hume_url = f"wss://api.hume.ai/v0/evi/chat?api_key={hume_api_key}&config_id={config_id}"
+            hume_url = f"wss://api.hume.ai/v0/evi/stream?api_key={hume_api_key}&config_id={config_id}"
             logger.info(f"🌐 URL: {hume_url[:80]}...")
             
             # Add authentication headers
