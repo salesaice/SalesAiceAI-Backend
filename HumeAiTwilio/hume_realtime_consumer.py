@@ -346,17 +346,24 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                 msg_type = data.get('type')
                 logger.info(f"📨 Received from HumeAI: {msg_type}")
                 
-                if msg_type == 'audio_output':
+                # if msg_type == 'audio_output':
                     # Get audio from HumeAI
-                    audio_data = data.get('data')  # Base64 audio
-                    if audio_data:
-                        logger.info(f"🔊 Received audio from HumeAI ({len(audio_data)} bytes)")
+                    # audio_data = data.get('data')  # Base64 audio
+                    # if audio_data:
+                    #     logger.info(f"🔊 Received audio from HumeAI ({len(audio_data)} bytes)")
                         
-                        # Send to Twilio with proper chunking
-                        await self.send_audio_chunks_to_twilio(audio_data)
-                    else:
-                        logger.warning(f"⚠️ Empty audio_output received")
-                
+                    #     # Send to Twilio with proper chunking
+                    #     await self.send_audio_chunks_to_twilio(audio_data)
+                    # else:
+                    #     logger.warning(f"⚠️ Empty audio_output received")
+                if msg_type == "audio_output":
+                 audio_data = data.get("data", {}).get("audio")
+                if audio_data:
+                  await self.twilio_ws.send(text_data=json.dumps({
+                   "event": "media",
+                   "streamSid": self.stream_sid,
+                   "media": {"payload": audio_data}
+                    }))
                 elif msg_type == 'user_message':
                     # Log transcription
                     transcript = data.get('text')

@@ -7,6 +7,7 @@ import json
 import base64
 import asyncio
 import logging
+import audioop
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 import websockets
@@ -159,17 +160,19 @@ class TwilioHumeEVIConsumer(AsyncWebsocketConsumer):
             logger.info("✅ Connected to HumeAI EVI")
             
             # Configure audio settings
+            # HumeAI EVI requires linear16 encoding, not mulaw
+            # We'll need to convert Twilio's mulaw to linear16
             config_msg = {
                 "type": "session_settings",
                 "audio": {
-                    "encoding": "mulaw",  # Twilio uses mulaw
-                    "sample_rate": 8000,  # Twilio uses 8kHz
+                    "encoding": "linear16",  # HumeAI requires linear16
+                    "sample_rate": 8000,  # 8kHz sample rate
                     "channels": 1
                 }
             }
             
             await self.hume_ws.send(json.dumps(config_msg))
-            logger.info("✅ Audio settings configured")
+            logger.info("✅ Audio settings configured (linear16, 8kHz)")
             
             # Start listening to HumeAI
             self.running = True
@@ -181,11 +184,21 @@ class TwilioHumeEVIConsumer(AsyncWebsocketConsumer):
             traceback.print_exc()
     
     async def send_audio_to_hume(self, audio_base64):
-        """Send audio to HumeAI"""
+        """Send audio to HumeAI (convert mulaw to linear16)"""
         try:
+            # Decode base64 mulaw audio from Twilio
+            mulaw_data = base64.b64decode(audio_base64)
+            
+            # Convert mulaw to linear16 (PCM)
+            linear_data = audioop.ulaw2lin(mulaw_data, 2)  # 2 = 16-bit samples
+            
+            # Encode back to base64
+            linear_base64 = base64.b64encode(linear_data).decode('utf-8')
+            
+            # Send to HumeAI
             message = {
                 "type": "audio_input",
-                "data": audio_base64
+                "data": linear_base64
             }
             await self.hume_ws.send(json.dumps(message))
         except Exception as e:
@@ -256,13 +269,23 @@ class TwilioHumeEVIConsumer(AsyncWebsocketConsumer):
             traceback.print_exc()
     
     async def send_audio_to_twilio(self, audio_base64):
-        """Send audio to Twilio caller"""
+        """Send audio to Twilio caller (convert linear16 to mulaw)"""
         try:
+            # Decode base64 linear16 audio from HumeAI
+            linear_data = base64.b64decode(audio_base64)
+            
+            # Convert linear16 to mulaw for Twilio
+            mulaw_data = audioop.lin2ulaw(linear_data, 2)  # 2 = 16-bit samples
+            
+            # Encode back to base64
+            mulaw_base64 = base64.b64encode(mulaw_data).decode('utf-8')
+            
+            # Send to Twilio
             media_msg = {
                 "event": "media",
                 "streamSid": self.stream_sid,
                 "media": {
-                    "payload": audio_base64
+                    "payload": mulaw_base64
                 }
             }
             

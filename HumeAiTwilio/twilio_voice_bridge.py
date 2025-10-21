@@ -42,21 +42,15 @@ def twilio_voice_webhook(request):
     # Create TwiML response with proper bidirectional audio
     response = VoiceResponse()
     
-    # Use ngrok URL for WebSocket (PythonAnywhere doesn't support WebSockets directly)
-    # Get WebSocket URL from SERVER_URL (should be your ngrok URL)
-    ws_host = SERVER_URL.replace('https://', '').replace('http://', '')
-    
     # Test with both tracks - ensuring we get user input AND send AI output
     # Start bidirectional media stream to HumeAI
     start = Start()
     stream = Stream(
-        url=f'wss://{ws_host}/ws/hume-twilio/stream/{call_sid}',
+        url=f'wss://{request.get_host()}/ws/hume-twilio/stream/{call_sid}',
         track='both_tracks'  # Both directions - user speech + AI responses
     )
     start.append(stream)
     response.append(start)
-    
-    logger.info(f"🔗 WebSocket URL: wss://{ws_host}/ws/hume-twilio/stream/{call_sid}")
     
     # Keep the call alive with extended time for conversation
     response.pause(length=300)  # 5 minutes for full conversation
