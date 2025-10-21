@@ -30,6 +30,13 @@ from .twilio_simple_voice import (
     twilio_status_callback_simple,
 )
 
+# FIXED: Import ngrok-compatible webhooks
+from .twilio_webhook_fixed import (
+    twilio_voice_webhook_fixed,
+    twilio_status_callback_fixed,
+    health_check,
+)
+
 app_name = 'HumeAiTwilio'
 
 # Router for ViewSets
@@ -56,6 +63,11 @@ urlpatterns = [
     path('voice-webhook-simple/', twilio_voice_webhook_simple, name='voice-webhook-simple'),
     path('process-speech-simple/', process_speech_simple, name='process-speech-simple'),
     path('status-callback-simple/', twilio_status_callback_simple, name='status-callback-simple'),
+    
+    # FIXED: Ngrok-compatible webhooks (Use these with Twilio!)
+    path('voice-webhook-fixed/', twilio_voice_webhook_fixed, name='voice-webhook-fixed'),
+    path('status-callback-fixed/', twilio_status_callback_fixed, name='status-callback-fixed'),
+    path('health/', health_check, name='health-check'),
     
     # Dashboard endpoints
     path('dashboard/stats/', dashboard_stats, name='dashboard-stats'),
