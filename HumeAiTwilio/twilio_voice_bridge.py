@@ -24,6 +24,7 @@ HUME_CONFIG_ID = config('HUME_CONFIG_ID', default='')
 
 # Your server URL (for webhooks)
 SERVER_URL = config('SERVER_URL', default='http://127.0.0.1:8000')
+BASE_URL = config('BASE_URL', default=SERVER_URL)
 
 
 @csrf_exempt
@@ -45,8 +46,11 @@ def twilio_voice_webhook(request):
     # Test with both tracks - ensuring we get user input AND send AI output
     # Start bidirectional media stream to HumeAI
     start = Start()
+    
+    # Use BASE_URL for WebSocket (replace https:// with wss://)
+    ws_url = BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://')
     stream = Stream(
-        url=f'wss://{request.get_host()}/ws/hume-twilio/stream/{call_sid}',
+        url=f'{ws_url}/ws/hume-twilio/stream/{call_sid}',
         track='both_tracks'  # Both directions - user speech + AI responses
     )
     start.append(stream)

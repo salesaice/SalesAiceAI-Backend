@@ -11,6 +11,9 @@ import websockets
 import audioop  # For audio format conversion
 from typing import Optional
 from channels.generic.websocket import AsyncWebsocketConsumer
+from pydub import AudioSegment
+from pydub.effects import speedup
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +82,44 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.error(f"❌ Audio conversion error: {e}")
             logger.error(f"❌ Input data length: {len(linear_b64) if linear_b64 else 0}")
             return linear_b64  # Return original if conversion fails
+
+    def speed_up_audio(self, linear_data: bytes, speed_factor: float = 2.0) -> bytes:
+        """
+        Speed up audio by the given factor using pydub
+        speed_factor = 2.0 means 100% faster (DOUBLE SPEED for natural human speech)
+        """
+        try:
+            # Convert raw bytes to AudioSegment
+            audio = AudioSegment.from_raw(
+                io.BytesIO(linear_data),
+                sample_width=2,  # 16-bit audio (2 bytes per sample)
+                frame_rate=8000,  # 8kHz sample rate (Twilio standard)
+                channels=1  # Mono audio
+            )
+            
+            # Speed up the audio
+            fast_audio = speedup(audio, playback_speed=speed_factor)
+            
+            # Convert back to raw bytes
+            output = io.BytesIO()
+            fast_audio.export(output, format="raw")
+            
+            sped_up_data = output.getvalue()
+            
+            # Log speed adjustment (occasionally to avoid spam)
+            if not hasattr(self, '_speedup_count'):
+                self._speedup_count = 0
+            self._speedup_count += 1
+            
+            if self._speedup_count % 50 == 1:  # Log first and every 50th
+                logger.info(f"🚀 Audio speed adjustment #{self._speedup_count}: {speed_factor}x faster ({len(linear_data)} → {len(sped_up_data)} bytes)")
+            
+            return sped_up_data
+            
+        except Exception as e:
+            logger.error(f"❌ Speed adjustment failed: {e}")
+            # Return original audio if speed adjustment fails
+            return linear_data
 
     async def connect(self):
         """Accept WebSocket connection from Twilio"""
@@ -204,12 +245,13 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             
             # Connect to HumeAI EVI
             logger.info(f"🔌 Connecting to HumeAI EVI...")
-            hume_url = f"wss://api.hume.ai/v0/evi/stream?api_key={hume_api_key}&config_id={config_id}"
-            logger.info(f"🌐 URL: {hume_url[:80]}...")
+            # Correct EVI WebSocket endpoint - use API key in header, not query param
+            hume_url = f"wss://api.hume.ai/v0/assistant/chat?config_id={config_id}"
+            logger.info(f"🌐 URL: {hume_url}")
             
-            # Add authentication headers
+            # Add authentication headers with API key
             headers = {
-                'Authorization': f'Bearer {hume_secret_key}',
+                'X-Hume-Api-Key': hume_api_key,
                 'Content-Type': 'application/json'
             }
             
@@ -223,6 +265,7 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.info(f"✅ Ready for call: {self.call_sid}")
             
             # Send initial session configuration to HumeAI (simplified and working)
+            # Note: Speech rate is controlled via HumeAI config, not session settings
             session_config = {
                 "type": "session_settings",
                 "config_id": config_id,
@@ -236,6 +279,7 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
             logger.info(f"📤 Sent optimized session config to HumeAI")
             logger.info(f"   🎛️ Audio: 8kHz linear16, 20ms chunks, VAD enabled")
             logger.info(f"   🎙️ Turn detection: Server VAD with 500ms silence threshold")
+            logger.info(f"   🗣️ Speech rate: Controlled via HumeAI dashboard config")
             
             # Start listening to HumeAI responses
             asyncio.create_task(self.listen_to_hume())
@@ -346,24 +390,35 @@ class HumeTwilioRealTimeConsumer(AsyncWebsocketConsumer):
                 msg_type = data.get('type')
                 logger.info(f"📨 Received from HumeAI: {msg_type}")
                 
-                # if msg_type == 'audio_output':
-                    # Get audio from HumeAI
-                    # audio_data = data.get('data')  # Base64 audio
-                    # if audio_data:
-                    #     logger.info(f"🔊 Received audio from HumeAI ({len(audio_data)} bytes)")
+                if msg_type == 'audio_output':
+                    # HumeAI EVI v2 sends audio in 'data' field
+                    audio_data = data.get('data')
+                    
+                    if audio_data:
+                        logger.info(f"🔊 Received audio from HumeAI ({len(audio_data)} chars)")
                         
-                    #     # Send to Twilio with proper chunking
-                    #     await self.send_audio_chunks_to_twilio(audio_data)
-                    # else:
-                    #     logger.warning(f"⚠️ Empty audio_output received")
-                if msg_type == "audio_output":
-                 audio_data = data.get("data", {}).get("audio")
-                if audio_data:
-                  await self.twilio_ws.send(text_data=json.dumps({
-                   "event": "media",
-                   "streamSid": self.stream_sid,
-                   "media": {"payload": audio_data}
-                    }))
+                        # Decode linear16 audio from base64
+                        linear_data = base64.b64decode(audio_data)
+                        
+                        # 🚀 SPEED UP AUDIO (2.5x = 150% faster - VERY FAST for natural human pace)
+                        fast_linear_data = self.speed_up_audio(linear_data, speed_factor=2.5)
+                        
+                        # Convert sped-up linear16 PCM to µ-law for Twilio
+                        mulaw_data = audioop.lin2ulaw(fast_linear_data, 2)
+                        mulaw_b64 = base64.b64encode(mulaw_data).decode('utf-8')
+                        
+                        # Send to Twilio
+                        await self.send(text_data=json.dumps({
+                            "event": "media",
+                            "streamSid": self.stream_sid,
+                            "media": {"payload": mulaw_b64}
+                        }))
+                        logger.info(f"📤 Sent sped-up audio to Twilio (2.5x faster - VERY FAST)")
+                    else:
+                        logger.warning(f"⚠️ audio_output without 'data' field")
+                        logger.debug(f"   Available keys: {list(data.keys())}")
+                        logger.debug(f"   Full message: {json.dumps(data)[:500]}...")
+                
                 elif msg_type == 'user_message':
                     # Log transcription
                     transcript = data.get('text')
